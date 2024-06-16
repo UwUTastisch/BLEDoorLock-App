@@ -1,11 +1,48 @@
-import 'dart:math';
+import 'dart:async';
+import 'dart:developer';
+import 'dart:io';
 
+import 'package:bluetooth_low_energy/bluetooth_low_energy.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+bool get enablePeripheral => !Platform.isLinux && !Platform.isWindows;
+
 void main() {
+  runZonedGuarded(onStartUp, onCrashed);
+}
+
+void onStartUp() async {
+  Logger.root.onRecord.listen(onLogRecord);
+  // hierarchicalLoggingEnabled = true;
+  // CentralManager.instance.logLevel = Level.WARNING;
+  WidgetsFlutterBinding.ensureInitialized();
+  await CentralManager.instance.setUp();
+  if (enablePeripheral) {
+    await PeripheralManager.instance.setUp();
+  }
+
   runApp(const MyApp());
 }
+
+void onCrashed(Object error, StackTrace stackTrace) {
+  Logger.root.shout('App crached.', error, stackTrace);
+}
+
+void onLogRecord(LogRecord record) {
+  log(
+    record.message,
+    time: record.time,
+    sequenceNumber: record.sequenceNumber,
+    level: record.level.value,
+    name: record.loggerName,
+    zone: record.zone,
+    error: record.error,
+    stackTrace: record.stackTrace,
+  );
+}
+
+// Show widgets
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
@@ -14,45 +51,126 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'BLE-Door-Opener',
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: Colors.pink,
-        ),
-      ) /*ThemeData(
-          // This is the theme of your application.
-          //
-          // TRY THIS: Try running your application with "flutter run". You'll see
-          // the application has a purple toolbar. Then, without quitting the app,
-          // try changing the seedColor in the colorScheme below to Colors.green
-          // and then invoke "hot reload" (save your changes or press the "hot
-          // reload" button in a Flutter-supported IDE, or press "r" if you used
-          // the command line to start the app).
-          //
-          // Notice that the counter didn't reset back to zero; the application
-          // state is not lost during the reload. To reset the state, use hot
-          // restart instead.
-          //
-          // This works for code too, not just values: Most code changes can be
-          // tested with just a hot reload.
-          colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
-          useMaterial3: true,
-          cardColor: Colors.deepPurpleAccent,
-          cardTheme: const CardTheme(margin: EdgeInsets.all(5)))*/
-      ,
-      home: Scaffold(
-          appBar: AppBar(
-            backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-            title: Text("Door Opener"),
-            actions: [Text("Add Opener")],
+        title: 'BLE-Door-Opener',
+        theme: ThemeData(
+          colorScheme: ColorScheme.fromSeed(
+            seedColor: Colors.pink,
           ),
-          body: const OpenerPage(
-        bleDeviceName: "SPR-Door",
-        bleSharedKey: "Key",
-        bleDeviceInfoText:
-            'OwO this device is doing things i cant understand QwQ',
-      )),
+        ),
+        home: BodyView());
+  }
+}
+
+class BodyView extends StatefulWidget {
+  const BodyView({super.key});
+
+  @override
+  State<BodyView> createState() => _BodyViewState();
+}
+
+class _BodyViewState extends State<BodyView> {
+  late final ValueNotifier<bool> discovering;
+  late final ValueNotifier<BluetoothLowEnergyState> state;
+  late final ValueNotifier<List<DiscoveredEventArgs>> discoveredEventArgs;
+  late final StreamSubscription stateChangedSubscription;
+  late final StreamSubscription discoveredSubscription;
+
+  @override
+  void initState() {
+    super.initState();
+    state = ValueNotifier(BluetoothLowEnergyState.unknown);
+    discovering = ValueNotifier(false);
+    discoveredEventArgs = ValueNotifier([]);
+    stateChangedSubscription = CentralManager.instance.stateChanged.listen(
+      (eventArgs) {
+        state.value = eventArgs.state;
+      },
     );
+    discoveredSubscription = CentralManager.instance.discovered.listen(
+      (eventArgs) {
+        final items = discoveredEventArgs.value;
+        final i = items.indexWhere(
+          (item) => item.peripheral == eventArgs.peripheral,
+        );
+        if (i < 0) {
+          discoveredEventArgs.value = [...items, eventArgs];
+        } else {
+          items[i] = eventArgs;
+          discoveredEventArgs.value = [...items];
+        }
+      },
+    );
+    _initialize();
+  }
+
+  void _initialize() async {
+    state.value = await CentralManager.instance.getState();
+    startDiscovery();
+  }
+
+  Future<void> startDiscovery() async {
+    discoveredEventArgs.value = [];
+    await CentralManager.instance.startDiscovery();
+    discovering.value = true;
+  }
+
+  Future<void> stopDiscovery() async {
+    await CentralManager.instance.stopDiscovery();
+    discovering.value = false;
+  }
+
+  Widget buildShowAll(BuildContext context) {
+    return ValueListenableBuilder(
+      valueListenable: discoveredEventArgs,
+      builder: (context, discoveredEventArgs, child) {
+        final items = discoveredEventArgs
+            .where((eventArgs) => eventArgs.advertisement.name != null)
+            .toList();
+        return ListView.separated(
+          itemBuilder: (context, i) {
+            final theme = Theme.of(context);
+            final item = items[i];
+            final uuid = item.peripheral.uuid;
+            final rssi = item.rssi;
+            final advertisement = item.advertisement;
+            final name = advertisement.name;
+            return Text("Name $name, \n UUID $uuid, \n RSSI $rssi, \n Advertisment $advertisement");
+          },
+          separatorBuilder: (BuildContext context, int index) {
+            return const Divider(
+              height: 0.0,
+            );
+          }, itemCount: items.length,
+        );
+      },
+    );
+  }
+
+  Widget buildKnown(BuildContext context) {
+    return const OpenerPage(
+      bleDeviceName: "SPR-Door2",
+      bleSharedKey: "Key",
+      bleDeviceInfoText:
+          'OwO this device is doing things i cant understand QwQ',
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+        appBar: AppBar(
+          backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+          title: const Text("Door Opener"),
+          actions: [
+            ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.orange // foreground
+                    ),
+                onPressed: () async {},
+                child: const Text("Add Opener"))
+          ],
+        ),
+        body: buildShowAll(context));
   }
 }
 
@@ -81,7 +199,7 @@ class _OpenerPageState extends State<OpenerPage> {
     bool b = abs > 5;
 
     if (kDebugMode) {
-      print("time $tryConnect, difference $abs, boolean $b");
+      print("OwO3 time $tryConnect, difference $abs, boolean $b");
     }
 
     return b;
@@ -158,90 +276,13 @@ class _OpenerPageState extends State<OpenerPage> {
   }
 }
 
-class MyHomePage extends StatefulWidget {
-  const MyHomePage({super.key, required this.title});
-
-  // This widget is the home page of your application. It is stateful, meaning
-  // that it has a State object (defined below) that contains fields that affect
-  // how it looks.
-
-  // This class is the configuration for the state. It holds the values (in this
-  // case the title) provided by the parent (in this case the App widget) and
-  // used by the build method of the State. Fields in a Widget subclass are
-  // always marked "final".
-
-  final String title;
-
-  @override
-  State<MyHomePage> createState() => _MyHomePageState();
-}
-
-class _MyHomePageState extends State<MyHomePage> {
-  int _counter = 0;
-
-  void _incrementCounter() {
-    setState(() {
-      // This call to setState tells the Flutter framework that something has
-      // changed in this State, which causes it to rerun the build method below
-      // so that the display can reflect the updated values. If we changed
-      // _counter without calling setState(), then the build method would not be
-      // called again, and so nothing would appear to happen.
-      _counter++;
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    // This method is rerun every time setState is called, for instance as done
-    // by the _incrementCounter method above.
-    //
-    // The Flutter framework has been optimized to make rerunning build methods
-    // fast, so that you can just rebuild anything that needs updating rather
-    // than having to individually change instances of widgets.
-    return Scaffold(
-      appBar: AppBar(
-        // TRY THIS: Try changing the color here to a specific color (to
-        // Colors.amber, perhaps?) and trigger a hot reload to see the AppBar
-        // change color while the other colors stay the same.
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        // Here we take the value from the MyHomePage object that was created by
-        // the App.build method, and use it to set our appbar title.
-        title: Text(widget.title),
-      ),
-      body: Center(
-        // Center is a layout widget. It takes a single child and positions it
-        // in the middle of the parent.
-        child: Column(
-          // Column is also a layout widget. It takes a list of children and
-          // arranges them vertically. By default, it sizes itself to fit its
-          // children horizontally, and tries to be as tall as its parent.
-          //
-          // Column has various properties to control how it sizes itself and
-          // how it positions its children. Here we use mainAxisAlignment to
-          // center the children vertically; the main axis here is the vertical
-          // axis because Columns are vertical (the cross axis would be
-          // horizontal).
-          //
-          // TRY THIS: Invoke "debug painting" (choose the "Toggle Debug Paint"
-          // action in the IDE, or press "p" in the console), to see the
-          // wireframe for each widget.
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: <Widget>[
-            const Text(
-              'You have pushed the button this many times:',
-            ),
-            Text(
-              '$_counter',
-              style: Theme.of(context).textTheme.headlineMedium,
-            ),
-          ],
-        ),
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _incrementCounter,
-        tooltip: 'Increment',
-        child: const Icon(Icons.add),
-      ), // This trailing comma makes auto-formatting nicer for build methods.
-    );
-  }
-}
+/*
+                  print("OwO4.09 ${discoveredSubscription}");
+                  ValueNotifier<BluetoothLowEnergyState> state;
+                  state = ValueNotifier(BluetoothLowEnergyState.unknown);
+                  state.value = await CentralManager.instance.getState();
+                  //discoveredEventArgs.value = [];
+                  await CentralManager.instance.startDiscovery();
+                  print("OwO4.1 ${discoveredSubscription}");
+                  //discovering.value = true;
+ */
