@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:bluetooth_low_energy/bluetooth_low_energy.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 bool get enablePeripheral => !Platform.isLinux && !Platform.isWindows;
 
@@ -134,13 +135,30 @@ class _BodyViewState extends State<BodyView> {
             final rssi = item.rssi;
             final advertisement = item.advertisement;
             final name = advertisement.name;
-            return Text("Name $name, \n UUID $uuid, \n RSSI $rssi, \n Advertisment $advertisement");
+            return Column(children: [
+              Text(
+                  "Name -> $name, \n UUID -> $uuid, \n RSSI -> $rssi, \n Advertisment -> $advertisement"),
+              ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.orange // foreground
+                      ),
+                  onPressed: () {
+                    Clipboard.setData(ClipboardData(text: uuid.toString()));
+                  },
+                  child: const Text("Copy ID")),
+              ElevatedButton(
+                  child: const Text("Connect"),
+                  onPressed: () async {
+                    await CentralManager.instance.connect(item.peripheral);
+                  })
+            ]);
           },
           separatorBuilder: (BuildContext context, int index) {
             return const Divider(
               height: 0.0,
             );
-          }, itemCount: items.length,
+          },
+          itemCount: items.length,
         );
       },
     );
