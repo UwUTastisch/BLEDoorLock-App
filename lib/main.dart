@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:developer';
 import 'dart:io';
 
@@ -8,6 +9,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 bool get enablePeripheral => !Platform.isLinux && !Platform.isWindows;
+
+final uuidUserCharacteristic =
+    UUID.fromString("5d3932fa-2901-4b6b-9f41-7720976a85d4");
+final uuidPassCharacteristic =
+    UUID.fromString("dd16cad0-a66a-402f-9183-201c20753647");
+final uuidLockStateCharacteristic =
+    UUID.fromString("05c5653a-7279-406c-9f9e-df72aa99ca2d");
 
 void main() {
   runZonedGuarded(onStartUp, onCrashed);
@@ -149,7 +157,35 @@ class _BodyViewState extends State<BodyView> {
               ElevatedButton(
                   child: const Text("Connect"),
                   onPressed: () async {
-                    await CentralManager.instance.connect(item.peripheral);
+                    await CentralManager.instance
+                        .connect(item.peripheral)
+                        .whenComplete(
+                      () {
+                        CentralManager.instance
+                            .discoverGATT(item.peripheral)
+                            .then((value) {
+                          print("OwO4.1 $value");
+                          value.forEach((element) {
+                            print("OwO4.2 ${element.uuid}");
+                            print("OwO4.3 ${element.characteristics}");
+                            element.characteristics.forEach((element) {
+                              print("OwO4.4 ${element.uuid}");
+                              if(element.uuid == uuidLockStateCharacteristic) {
+                                print("OwO4.5 ${element.uuid}");
+                                CentralManager.instance.writeCharacteristic(element, value: Uint8List.fromList(utf8.encode("1")), type: GattCharacteristicWriteType.withoutResponse);
+                              } else if (element.uuid == uuidUserCharacteristic) {
+                                print("OwO4.6 ${element.uuid}");
+                                CentralManager.instance.writeCharacteristic(element, value: Uint8List.fromList(utf8.encode("spr")), type: GattCharacteristicWriteType.withoutResponse);
+                              } else if (element.uuid == uuidPassCharacteristic) {
+                                print("OwO4.7 ${element.uuid}");
+                                CentralManager.instance.writeCharacteristic(element, value: Uint8List.fromList(utf8.encode("spr")), type: GattCharacteristicWriteType.withoutResponse);
+                              }
+                            }
+                            );
+                          });
+                        });
+                      },
+                    );
                   })
             ]);
           },
