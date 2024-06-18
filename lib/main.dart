@@ -3,10 +3,13 @@ import 'dart:convert';
 import 'dart:developer';
 import 'dart:io';
 
+import 'package:ble_doorlock_opener/storage/ble-door-storage.dart';
 import 'package:bluetooth_low_energy/bluetooth_low_energy.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+
+import 'models/ble-door.dart';
 
 bool get enablePeripheral => !Platform.isLinux && !Platform.isWindows;
 
@@ -83,6 +86,7 @@ class _BodyViewState extends State<BodyView> {
   late final ValueNotifier<List<DiscoveredEventArgs>> discoveredEventArgs;
   late final StreamSubscription stateChangedSubscription;
   late final StreamSubscription discoveredSubscription;
+  late final ValueNotifier<List<BleDoor>> bleDoors;
 
   @override
   void initState() {
@@ -109,11 +113,18 @@ class _BodyViewState extends State<BodyView> {
         }
       },
     );
+    bleDoors = ValueNotifier([]);
     _initialize();
   }
 
   void _initialize() async {
     state.value = await CentralManager.instance.getState();
+    List<BleDoor> loadedBleDoors = await BleDoorStorage.loadBleDoors();
+    loadedBleDoors.forEach((door) {
+      print('Loaded BleDoor: ${door.toJson()}');
+    });
+    bleDoors.value = loadedBleDoors;
+
     startDiscovery();
   }
 
@@ -136,9 +147,12 @@ class _BodyViewState extends State<BodyView> {
             .where((eventArgs) => eventArgs.advertisement.name != null)
             .toList();
         return ListView.separated(
+          itemCount: items.length+1,
           itemBuilder: (context, i) {
-            final theme = Theme.of(context);
-            final item = items[i];
+            if(i == 0) {
+              return buildKnownBleDoor(context);
+            }
+            final item = items[i-1];
             final uuid = item.peripheral.uuid;
             final rssi = item.rssi;
             final advertisement = item.advertisement;
@@ -151,42 +165,18 @@ class _BodyViewState extends State<BodyView> {
                       backgroundColor: Colors.orange // foreground
                       ),
                   onPressed: () {
-                    Clipboard.setData(ClipboardData(text: uuid.toString()));
+                    BleDoor bleDoor = BleDoor(
+                        lockId: uuid,
+                        lockName: name ?? "Unknown",
+                        password: "spr",
+                        userName: "spr"
+                    );
+                    String bleDoorJson = jsonEncode(bleDoor.toJson());
+                    Clipboard.setData(
+                        ClipboardData(text: bleDoorJson));
+                    print("Example door $bleDoorJson");
                   },
                   child: const Text("Copy ID")),
-              ElevatedButton(
-                  child: const Text("Connect"),
-                  onPressed: () async {
-                    await CentralManager.instance
-                        .connect(item.peripheral)
-                        .whenComplete(
-                      () {
-                        CentralManager.instance
-                            .discoverGATT(item.peripheral)
-                            .then((value) {
-                          print("OwO4.1 $value");
-                          value.forEach((element) {
-                            print("OwO4.2 ${element.uuid}");
-                            print("OwO4.3 ${element.characteristics}");
-                            element.characteristics.forEach((element) {
-                              print("OwO4.4 ${element.uuid}");
-                              if(element.uuid == uuidLockStateCharacteristic) {
-                                print("OwO4.5 ${element.uuid}");
-                                CentralManager.instance.writeCharacteristic(element, value: Uint8List.fromList(utf8.encode("1")), type: GattCharacteristicWriteType.withoutResponse);
-                              } else if (element.uuid == uuidUserCharacteristic) {
-                                print("OwO4.6 ${element.uuid}");
-                                CentralManager.instance.writeCharacteristic(element, value: Uint8List.fromList(utf8.encode("spr")), type: GattCharacteristicWriteType.withoutResponse);
-                              } else if (element.uuid == uuidPassCharacteristic) {
-                                print("OwO4.7 ${element.uuid}");
-                                CentralManager.instance.writeCharacteristic(element, value: Uint8List.fromList(utf8.encode("spr")), type: GattCharacteristicWriteType.withoutResponse);
-                              }
-                            }
-                            );
-                          });
-                        });
-                      },
-                    );
-                  })
             ]);
           },
           separatorBuilder: (BuildContext context, int index) {
@@ -194,18 +184,167 @@ class _BodyViewState extends State<BodyView> {
               height: 0.0,
             );
           },
-          itemCount: items.length,
         );
       },
     );
   }
 
-  Widget buildKnown(BuildContext context) {
-    return const OpenerPage(
+  Widget buildKnownBleDoor(BuildContext context) {
+    return ValueListenableBuilder(valueListenable: bleDoors, builder: (context, value, child) {
+      return Column(
+        children: [
+          for (var bleDoor in value)
+            bleDoorWidget(bleDoor)
+        ],
+      );
+    });
+    // Load all BleDoor objectsWidget
+
+
+
+    /*return const OpenerPage(
       bleDeviceName: "SPR-Door2",
       bleSharedKey: "Key",
       bleDeviceInfoText:
           'OwO this device is doing things i cant understand QwQ',
+    );*/
+  }
+
+  Widget bleDoorWidget(BleDoor bleDoor) {
+    return Card(
+      color: Colors.black12,
+      child: Column(
+        children: [
+          Row(
+            children: [
+              const SizedBox(width: 5),
+              Expanded(
+                  child: Text(
+                    bleDoor.lockName,
+                    style: Theme.of(context).textTheme.displaySmall,
+                  )),
+              ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.orange // foreground
+                      ),
+                  onPressed: () {
+                    connectAndOpenBleDoor(bleDoor);
+                  },
+                  child: const Text("Open")),
+              Container(
+                margin: const EdgeInsets.all(5),
+                child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.orange // foreground
+                        ),
+                    onPressed: () async {
+                      await BleDoorStorage.removeBleDoor(bleDoor);
+                      await BleDoorStorage.loadBleDoors().then((value) {
+                        bleDoors.value = value;
+                      });
+                    },
+                    child: const Text("Remove")),
+              )
+            ],
+          ),
+          const Divider(
+            color: Colors.black12,
+            thickness: 2,
+            height: 2,
+          ),
+          Row(
+            children: [
+              const SizedBox(width: 5),
+              Text("Info:", style: Theme.of(context).textTheme.titleLarge),
+            ],
+          ),
+          Row(
+            children: [
+              const SizedBox(width: 5),
+              Text("Lock ID: ${bleDoor.lockId}"),
+            ],
+          ),
+          Row(
+            children: [
+              const SizedBox(width: 5),
+              Text("User: ${bleDoor.userName}"),
+            ],
+          )
+        ],
+      ),
+    );
+  }
+
+  Future<void> connectAndOpenBleDoor(BleDoor bleDoor) async {
+    
+    var peripheral = discoveredEventArgs.value.where((element) {
+      return element.peripheral.uuid == bleDoor.lockId;
+    }).first.peripheral;
+    await CentralManager.instance.disconnect(peripheral);
+    await CentralManager.instance.connect(peripheral);
+    
+    CentralManager.instance.discoverGATT(peripheral).then((value) {
+      print("OwO4.1 $value");
+      value.forEach((element) {
+        print("OwO4.2 ${element.uuid}");
+        print("OwO4.3 ${element.characteristics}");
+        element.characteristics.forEach((element) {
+          print("OwO4.4 ${element.uuid}");
+          if (element.uuid == uuidLockStateCharacteristic) {
+            print("OwO4.5 ${element.uuid}");
+            CentralManager.instance.writeCharacteristic(
+                element,
+                value: Uint8List.fromList(utf8.encode("2")),
+                type: GattCharacteristicWriteType.withoutResponse);
+          } else if (element.uuid == uuidUserCharacteristic) {
+            print("OwO4.6 ${element.uuid}");
+            CentralManager.instance.writeCharacteristic(
+                element,
+                value: Uint8List.fromList(utf8.encode(bleDoor.userName)),
+                type: GattCharacteristicWriteType.withoutResponse);
+          } else if (element.uuid == uuidPassCharacteristic) {
+            print("OwO4.7 ${element.uuid}");
+            CentralManager.instance.writeCharacteristic(
+                element,
+                value: Uint8List.fromList(utf8.encode(bleDoor.password)),
+                type: GattCharacteristicWriteType.withoutResponse);
+          }
+        });
+      });
+    });
+  }
+
+  void addOpenerDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        TextEditingController controller = TextEditingController();
+        return AlertDialog(
+          title: const Text('Add Opener'),
+          content: TextField(
+            controller: controller,
+            decoration: const InputDecoration(hintText: "Enter something here"),
+          ),
+          actions: <Widget>[
+            TextButton(
+              child: const Text('Done'),
+              onPressed: () async {
+                Navigator.of(context).pop();
+                //save opener
+                String bleDoorJson = controller.text;
+                print('You entered: $bleDoorJson');
+                BleDoor deserializedBleDoor = BleDoor.fromJson(jsonDecode(bleDoorJson));
+
+                await BleDoorStorage.addBleDoor(deserializedBleDoor);
+                await BleDoorStorage.loadBleDoors().then((value) {
+                  bleDoors.value = value;
+                });
+
+              },
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -220,14 +359,19 @@ class _BodyViewState extends State<BodyView> {
                 style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.orange // foreground
                     ),
-                onPressed: () async {},
+                onPressed: () async {
+                  addOpenerDialog(context);
+                },
                 child: const Text("Add Opener"))
           ],
         ),
-        body: buildShowAll(context));
+        body: buildShowAll(context)
+      //buildShowAll(context)
+     );
   }
 }
 
+/*
 class OpenerPage extends StatefulWidget {
   const OpenerPage(
       {super.key,
@@ -328,7 +472,7 @@ class _OpenerPageState extends State<OpenerPage> {
       ],
     );
   }
-}
+}*/
 
 /*
                   print("OwO4.09 ${discoveredSubscription}");

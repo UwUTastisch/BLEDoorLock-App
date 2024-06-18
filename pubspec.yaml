@@ -38,6 +38,7 @@ dependencies:
   bluetooth_low_energy: ^5.0.7
   convert: ^3.1.1
   intl: ^0.19.0
+  shared_preferences: ^2.0.8
 
 dev_dependencies:
   flutter_test:
