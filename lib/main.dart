@@ -8,6 +8,7 @@ import 'package:bluetooth_low_energy/bluetooth_low_energy.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:qr_code_dart_scan/qr_code_dart_scan.dart';
 
 import 'models/ble-door.dart';
 
@@ -147,12 +148,12 @@ class _BodyViewState extends State<BodyView> {
             .where((eventArgs) => eventArgs.advertisement.name != null)
             .toList();
         return ListView.separated(
-          itemCount: items.length+1,
+          itemCount: items.length + 1,
           itemBuilder: (context, i) {
-            if(i == 0) {
+            if (i == 0) {
               return buildKnownBleDoor(context);
             }
-            final item = items[i-1];
+            final item = items[i - 1];
             final uuid = item.peripheral.uuid;
             final rssi = item.rssi;
             final advertisement = item.advertisement;
@@ -169,11 +170,9 @@ class _BodyViewState extends State<BodyView> {
                         lockId: uuid,
                         lockName: name ?? "Unknown",
                         password: "spr",
-                        userName: "spr"
-                    );
+                        userName: "spr");
                     String bleDoorJson = jsonEncode(bleDoor.toJson());
-                    Clipboard.setData(
-                        ClipboardData(text: bleDoorJson));
+                    Clipboard.setData(ClipboardData(text: bleDoorJson));
                     print("Example door $bleDoorJson");
                   },
                   child: const Text("Copy ID")),
@@ -190,17 +189,14 @@ class _BodyViewState extends State<BodyView> {
   }
 
   Widget buildKnownBleDoor(BuildContext context) {
-    return ValueListenableBuilder(valueListenable: bleDoors, builder: (context, value, child) {
-      return Column(
-        children: [
-          for (var bleDoor in value)
-            bleDoorWidget(bleDoor)
-        ],
-      );
-    });
+    return ValueListenableBuilder(
+        valueListenable: bleDoors,
+        builder: (context, value, child) {
+          return Column(
+            children: [for (var bleDoor in value) bleDoorWidget(bleDoor)],
+          );
+        });
     // Load all BleDoor objectsWidget
-
-
 
     /*return const OpenerPage(
       bleDeviceName: "SPR-Door2",
@@ -220,13 +216,14 @@ class _BodyViewState extends State<BodyView> {
               const SizedBox(width: 5),
               Expanded(
                   child: Text(
-                    bleDoor.lockName,
-                    style: Theme.of(context).textTheme.displaySmall,
-                  )),
+                bleDoor.lockName,
+                style: Theme.of(context).textTheme.displaySmall,
+              )),
               ElevatedButton(
                   style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.orange // foreground
-                      ),
+                      backgroundColor: doorIsNearBy(bleDoor) ? Colors.green : Colors.grey,
+                    foregroundColor: Colors.white,),
+
                   onPressed: () {
                     connectAndOpenBleDoor(bleDoor);
                   },
@@ -234,14 +231,16 @@ class _BodyViewState extends State<BodyView> {
               Container(
                 margin: const EdgeInsets.all(5),
                 child: ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.orange // foreground
-                        ),
+                    style: TextButton.styleFrom(
+                      foregroundColor: Colors.white,
+                      backgroundColor: Colors.red, // text color
+                    ),
                     onPressed: () async {
-                      await BleDoorStorage.removeBleDoor(bleDoor);
-                      await BleDoorStorage.loadBleDoors().then((value) {
-                        bleDoors.value = value;
-                      });
+                      //await BleDoorStorage.removeBleDoor(bleDoor);
+                      //await BleDoorStorage.loadBleDoors().then((value) {
+                      //  bleDoors.value = value;
+                      //});
+                      sureYouWantToRemoveDialog(context, bleDoor);
                     },
                     child: const Text("Remove")),
               )
@@ -275,14 +274,23 @@ class _BodyViewState extends State<BodyView> {
     );
   }
 
-  Future<void> connectAndOpenBleDoor(BleDoor bleDoor) async {
-    
-    var peripheral = discoveredEventArgs.value.where((element) {
+  bool doorIsNearBy(BleDoor bleDoor) {
+    return discoveredEventArgs.value
+        .where((element) {
       return element.peripheral.uuid == bleDoor.lockId;
-    }).first.peripheral;
+    }).isNotEmpty;
+  }
+
+  Future<void> connectAndOpenBleDoor(BleDoor bleDoor) async {
+    var peripheral = discoveredEventArgs.value
+        .where((element) {
+          return element.peripheral.uuid == bleDoor.lockId;
+        })
+        .first
+        .peripheral;
     await CentralManager.instance.disconnect(peripheral);
     await CentralManager.instance.connect(peripheral);
-    
+
     CentralManager.instance.discoverGATT(peripheral).then((value) {
       print("OwO4.1 $value");
       value.forEach((element) {
@@ -292,20 +300,17 @@ class _BodyViewState extends State<BodyView> {
           print("OwO4.4 ${element.uuid}");
           if (element.uuid == uuidLockStateCharacteristic) {
             print("OwO4.5 ${element.uuid}");
-            CentralManager.instance.writeCharacteristic(
-                element,
+            CentralManager.instance.writeCharacteristic(element,
                 value: Uint8List.fromList(utf8.encode("2")),
                 type: GattCharacteristicWriteType.withoutResponse);
           } else if (element.uuid == uuidUserCharacteristic) {
             print("OwO4.6 ${element.uuid}");
-            CentralManager.instance.writeCharacteristic(
-                element,
+            CentralManager.instance.writeCharacteristic(element,
                 value: Uint8List.fromList(utf8.encode(bleDoor.userName)),
                 type: GattCharacteristicWriteType.withoutResponse);
           } else if (element.uuid == uuidPassCharacteristic) {
             print("OwO4.7 ${element.uuid}");
-            CentralManager.instance.writeCharacteristic(
-                element,
+            CentralManager.instance.writeCharacteristic(element,
                 value: Uint8List.fromList(utf8.encode(bleDoor.password)),
                 type: GattCharacteristicWriteType.withoutResponse);
           }
@@ -315,32 +320,167 @@ class _BodyViewState extends State<BodyView> {
   }
 
   void addOpenerDialog(BuildContext context) {
+    TextEditingController controller = TextEditingController();
+    ValueNotifier<bool> isJsonValid = ValueNotifier<bool>(false);
+
+    void checkJsonValidity(String json) {
+      try {
+        BleDoor.fromJson(jsonDecode(json));
+        isJsonValid.value = true;
+      } catch (e) {
+        isJsonValid.value = false;
+      }
+    }
+
+    controller.addListener(() {
+      checkJsonValidity(controller.text);
+    });
+
     showDialog(
       context: context,
       builder: (BuildContext context) {
-        TextEditingController controller = TextEditingController();
+        return Scaffold(
+            appBar: AppBar(
+              title: const Text('Add Door Opener by QR-Code or JSON Payloa'),
+            ),
+            body: qrCodeScan(controller),
+            floatingActionButton:  TextField(
+              controller: controller,
+              decoration: const InputDecoration(hintText: "Enter something here"),
+            ),
+            bottomNavigationBar: BottomAppBar(
+              child: Row(
+                children: [
+                  Expanded(child: SizedBox(width: 10,)),
+                  TextButton(
+                    onPressed: () {
+                      Navigator.of(context).pop();
+                    },
+                    style: TextButton.styleFrom(
+                      foregroundColor: Colors.white,
+                      backgroundColor: Colors.red, // text color
+                    ),
+                    child: const Text('Close'),
+                  ),
+                  const SizedBox(width: 10,),
+                  ValueListenableBuilder(
+                    valueListenable: isJsonValid,
+                    builder: (context, value, child) {
+                      return TextButton(
+                        onPressed: value ? () async {
+                          Navigator.of(context).pop();
+                          //save opener
+                          String bleDoorJson = controller.text;
+                          print('You entered: $bleDoorJson');
+                          BleDoor deserializedBleDoor =
+                          BleDoor.fromJson(jsonDecode(bleDoorJson));
+
+                          await BleDoorStorage.addBleDoor(deserializedBleDoor);
+                          await BleDoorStorage.loadBleDoors().then((value) {
+                            bleDoors.value = value;
+                          });
+                          successAddDoorDialog(context);
+                        } : null, // Disable the button if the JSON is not valid
+                        style: TextButton.styleFrom(
+                          foregroundColor: Colors.white, backgroundColor: (isJsonValid.value) ? Colors.green : Colors.grey, // text color
+                        ),
+                        child: const Text('Add Opener'),
+                      );
+                    },
+                  )
+                ],
+              ),
+            ));
+      },
+    );
+  }
+
+  QRCodeDartScanView qrCodeScan(TextEditingController controller) {
+    return QRCodeDartScanView(
+      scanInvertedQRCode: true, // enable scan invert qr code ( default = false)
+
+      typeScan: TypeScan.live,
+      onCapture: (Result result) {
+        print("OwO Result: ${result.text}");
+        //update textfield
+        controller.text = result.text;
+      },
+    );
+  }
+  
+  void successAddDoorDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
         return AlertDialog(
-          title: const Text('Add Opener'),
-          content: TextField(
-            controller: controller,
-            decoration: const InputDecoration(hintText: "Enter something here"),
-          ),
+          title: const Text('Success'),
+          content: const Text('The door was added successfully'),
           actions: <Widget>[
             TextButton(
-              child: const Text('Done'),
-              onPressed: () async {
+              onPressed: () {
                 Navigator.of(context).pop();
-                //save opener
-                String bleDoorJson = controller.text;
-                print('You entered: $bleDoorJson');
-                BleDoor deserializedBleDoor = BleDoor.fromJson(jsonDecode(bleDoorJson));
-
-                await BleDoorStorage.addBleDoor(deserializedBleDoor);
-                await BleDoorStorage.loadBleDoors().then((value) {
-                  bleDoors.value = value;
-                });
-
               },
+              child: const Text('Close'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+  
+  void successDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Success'),
+          content: const Text('The door was opened successfully'),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+              child: const Text('Close'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+  
+  void errorAddDoorDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Error'),
+          content: const Text('The door could not be added'),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+              child: const Text('Close'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+  
+  void errorDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Error'),
+          content: const Text('The door could not be opened'),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+              child: const Text('Close'),
             ),
           ],
         );
@@ -366,121 +506,45 @@ class _BodyViewState extends State<BodyView> {
           ],
         ),
         body: buildShowAll(context)
-      //buildShowAll(context)
-     );
-  }
-}
-
-/*
-class OpenerPage extends StatefulWidget {
-  const OpenerPage(
-      {super.key,
-      required this.bleDeviceName,
-      required this.bleSharedKey,
-      required this.bleDeviceInfoText});
-
-  final String bleDeviceName;
-  final String bleDeviceInfoText;
-  final String bleSharedKey;
-
-  @override
-  State<OpenerPage> createState() {
-    return _OpenerPageState();
-  }
-}
-
-class _OpenerPageState extends State<OpenerPage> {
-  DateTime tryConnect = DateTime.now().add(const Duration(days: 1));
-
-  bool isConnected() {
-    var abs = tryConnect.difference(DateTime.now()).inSeconds.abs();
-    bool b = abs > 5;
-
-    if (kDebugMode) {
-      print("OwO3 time $tryConnect, difference $abs, boolean $b");
-    }
-
-    return b;
+        //buildShowAll(context)
+        );
   }
 
-  //bool isConnected() {
-  //  tryConnect.difference(DateTime.now()).inSeconds > 5;
-  //}
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Card(
-          color: Colors.black12,
-          child: Column(
-            children: [
-              Row(
-                children: [
-                  const SizedBox(width: 5),
-                  Expanded(
-                      child: Text(
-                    widget.bleDeviceName,
-                    style: Theme.of(context).textTheme.displaySmall,
-                  )),
-                  (isConnected())
-                      ? const SizedBox()
-                      : ElevatedButton(
-                          style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.orange // foreground
-                              ),
-                          onPressed: () {
-                            setState(() {});
-                          },
-                          child: const Text("Open")),
-                  Container(
-                    margin: const EdgeInsets.all(5),
-                    child: ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.orange // foreground
-                            ),
-                        onPressed: () {
-                          setState(() {
-                            tryConnect = DateTime.now();
-                          });
-                        },
-                        child: const Text("Connect")),
-                  )
-                ],
+  void sureYouWantToRemoveDialog(BuildContext context, BleDoor bleDoor) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Are you sure?'),
+          content: const Text('Do you really want to remove this door?'),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () async {
+                await BleDoorStorage.removeBleDoor(bleDoor);
+                await BleDoorStorage.loadBleDoors().then((value) {
+                  bleDoors.value = value;
+                });
+                Navigator.of(context).pop();
+              },
+              style: TextButton.styleFrom(
+                foregroundColor: Colors.white,
+                backgroundColor: Colors.red, // text color
               ),
-              const Divider(
-                color: Colors.black12,
-                thickness: 2,
-                height: 2,
+              child: const Text('Yes'),
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+              child: const Text('No'),
+              style: TextButton.styleFrom(
+                foregroundColor: Colors.white,
+                backgroundColor: Colors.green, // text color
               ),
-              Row(
-                children: [
-                  const SizedBox(width: 5),
-                  Text("Info:", style: Theme.of(context).textTheme.titleLarge),
-                ],
-              ),
-              Row(
-                children: [
-                  const SizedBox(width: 5),
-                  Text(widget.bleDeviceInfoText),
-                ],
-              ),
-              Text(tryConnect.toString())
-            ],
-          ),
-        ),
-      ],
+            ),
+          ],
+        );
+      },
     );
   }
-}*/
-
-/*
-                  print("OwO4.09 ${discoveredSubscription}");
-                  ValueNotifier<BluetoothLowEnergyState> state;
-                  state = ValueNotifier(BluetoothLowEnergyState.unknown);
-                  state.value = await CentralManager.instance.getState();
-                  //discoveredEventArgs.value = [];
-                  await CentralManager.instance.startDiscovery();
-                  print("OwO4.1 ${discoveredSubscription}");
-                  //discovering.value = true;
- */
+}
