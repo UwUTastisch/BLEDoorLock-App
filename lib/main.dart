@@ -4,16 +4,20 @@ import 'dart:developer';
 import 'dart:io';
 
 import 'package:ble_doorlock_opener/storage/ble-door-storage.dart';
+import 'package:ble_doorlock_opener/utils.dart';
 import 'package:bluetooth_low_energy/bluetooth_low_energy.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:qr_code_dart_scan/qr_code_dart_scan.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 
 import 'models/ble-door.dart';
 
 bool get enablePeripheral => !Platform.isLinux && !Platform.isWindows;
 
+final ValueNotifier<bool> showAllBLEDevices = ValueNotifier(false);
 final uuidUserCharacteristic =
     UUID.fromString("5d3932fa-2901-4b6b-9f41-7720976a85d4");
 final uuidPassCharacteristic =
@@ -142,181 +146,296 @@ class _BodyViewState extends State<BodyView> {
 
   Widget buildShowAll(BuildContext context) {
     return ValueListenableBuilder(
-      valueListenable: discoveredEventArgs,
-      builder: (context, discoveredEventArgs, child) {
-        final items = discoveredEventArgs
-            .where((eventArgs) => eventArgs.advertisement.name != null)
-            .toList();
-        return ListView.separated(
-          itemCount: items.length + 1,
-          itemBuilder: (context, i) {
-            if (i == 0) {
-              return buildKnownBleDoor(context);
-            }
-            final item = items[i - 1];
-            final uuid = item.peripheral.uuid;
-            final rssi = item.rssi;
-            final advertisement = item.advertisement;
-            final name = advertisement.name;
-            return Column(children: [
-              Text(
-                  "Name -> $name, \n UUID -> $uuid, \n RSSI -> $rssi, \n Advertisment -> $advertisement"),
-              ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.orange // foreground
+      valueListenable: showAllBLEDevices,
+      builder: (context, showble, child) => ValueListenableBuilder(
+        valueListenable: discoveredEventArgs,
+        builder: (context, eventargs, child) {
+          List<Widget> widgets = [
+            for (var bleDoor in bleDoors.value) bleDoorWidget(context, bleDoor)
+          ];
+          if (showble) {
+            widgets.addAll(
+                bleListeningWidgets(context, discoveredEventArgs.value));
+          }
+
+          return ListView.separated(
+              itemBuilder: (BuildContext context, int index) {
+                return widgets[index];
+              },
+              separatorBuilder: (BuildContext context, int index) {
+                return const Divider(
+                  height: 0.0,
+                );
+              },
+              itemCount: widgets.length);
+        },
+      ),
+    );
+  }
+
+  List<Widget> bleListeningWidgets(
+      BuildContext context, List<DiscoveredEventArgs> discoveredEventArgs) {
+    // List<Widget> bleListeningWidgets(BuildContext context, List<DiscoveredEventArgs> discoveredEventArgs) {
+    List<Widget> widgets = [];
+
+    for (var item in discoveredEventArgs) {
+      final uuid = item.peripheral.uuid;
+      final rssi = item.rssi;
+      final advertisement = item.advertisement;
+      final name = advertisement.name;
+      if(advertisement.name == null) {
+        continue;
+      }
+      widgets.add(Column(children: [
+        Text(
+            "Name -> $name, \n UUID -> $uuid, \n RSSI -> $rssi, \n Advertisment -> $advertisement"),
+        ElevatedButton(
+            style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.orange // foreground
+                ),
+            onPressed: () {
+              BleDoor bleDoor = BleDoor(
+                  lockId: uuid,
+                  lockName: name ?? "Unknown",
+                  password: "spr",
+                  userName: "spr");
+              String bleDoorJson = jsonEncode(bleDoor.toJson());
+              Clipboard.setData(ClipboardData(text: bleDoorJson));
+              print("Example door $bleDoorJson");
+            },
+            child: const Text("Copy ID")),
+      ]));
+    }
+    return widgets;
+  }
+
+  Widget bleDoorWidget(BuildContext context, BleDoor bleDoor) {
+    return GestureDetector(
+      onLongPress: () {
+        showAdminMenu(context, bleDoor);
+      },
+      child: Card(
+        color: Colors.black12,
+        child: Column(
+          children: [
+            Row(
+              children: [
+                const SizedBox(width: 5),
+                Expanded(
+                    child: Text(
+                  bleDoor.lockName,
+                  style: Theme.of(context).textTheme.displaySmall,
+                )),
+                Container(
+                  margin: const EdgeInsets.all(5),
+                  child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor:
+                            doorIsNearBy(bleDoor) ? Colors.green : Colors.grey,
+                        foregroundColor: Colors.white,
                       ),
-                  onPressed: () {
-                    BleDoor bleDoor = BleDoor(
-                        lockId: uuid,
-                        lockName: name ?? "Unknown",
-                        password: "spr",
-                        userName: "spr");
-                    String bleDoorJson = jsonEncode(bleDoor.toJson());
-                    Clipboard.setData(ClipboardData(text: bleDoorJson));
-                    print("Example door $bleDoorJson");
-                  },
-                  child: const Text("Copy ID")),
-            ]);
-          },
-          separatorBuilder: (BuildContext context, int index) {
-            return const Divider(
-              height: 0.0,
-            );
-          },
+                      onPressed: () {
+                        connectAndOpenBleDoor(bleDoor);
+                      },
+                      child: const Text("Open")),
+                )
+                //Container(
+                //  margin: const EdgeInsets.all(5),
+                //  child: ElevatedButton(
+                //      style: TextButton.styleFrom(
+                //        foregroundColor: Colors.white,
+                //        backgroundColor: Colors.red, // text color
+                //      ),
+                //      onPressed: () async {
+                //        sureYouWantToRemoveDialog(context, bleDoor);
+                //      },
+                //      child: Icon(Icons.delete)),
+                //)
+              ],
+            ),
+            const Divider(
+              color: Colors.black12,
+              thickness: 2,
+              height: 2,
+            ),
+            Row(
+              children: [
+                const SizedBox(width: 5),
+                Text("Info:", style: Theme.of(context).textTheme.titleLarge),
+              ],
+            ),
+            Row(
+              children: [
+                const SizedBox(width: 5),
+                Text("Lock ID: ${bleDoor.lockId}"),
+              ],
+            ),
+            Row(
+              children: [
+                const SizedBox(width: 5),
+                Text("User: ${bleDoor.userName}"),
+              ],
+            )
+          ],
+        ),
+      ),
+    );
+  }
+
+  void showAdminMenu(BuildContext context, BleDoor bleDoor) {
+    showModalBottomSheet(
+      context: context,
+      builder: (BuildContext context) {
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            ListTile(
+              title: Text('Settings: ${bleDoor.lockName}',
+                  style: Theme.of(context).textTheme.titleLarge),
+            ),
+            const Divider(height: 0, thickness: 2),
+            if (bleDoor.isAdmin)
+              ListTile(
+                leading: const Icon(Icons.add),
+                title: const Text('Add Door User'),
+                onTap: () {
+                  addUserDialog1(bleDoor);
+                },
+              ),
+            if (bleDoor.isAdmin) const Divider(thickness: 2, height: 0),
+            ListTile(
+              leading: const Icon(Icons.delete, color: Colors.red),
+              title: const Text('Delete Door'),
+              onTap: () {
+                sureYouWantToRemoveDialog(context, bleDoor);
+                // TODO: Implement delete door functionality
+              },
+            ),
+            // Add more admin options here
+          ],
         );
       },
     );
   }
 
-  Widget buildKnownBleDoor(BuildContext context) {
-    return ValueListenableBuilder(
-        valueListenable: bleDoors,
-        builder: (context, value, child) {
-          return Column(
-            children: [for (var bleDoor in value) bleDoorWidget(bleDoor)],
+  void addUserDialog1(BleDoor bleDoor) {
+    TextEditingController controller = TextEditingController();
+    ValueNotifier<bool> isValidUserNameBool = ValueNotifier<bool>(false);
+
+    controller.addListener(() {
+      isValidUserNameBool.value = isValidUsername(controller.text);
+    });
+
+    showDialog(
+        context: context,
+        builder: (context) {
+          return Scaffold(
+            appBar: AppBar(
+              title: const Text('Add Door User'),
+            ),
+            body: Column(
+              children: [
+                Container(
+                  margin: const EdgeInsets.all(15),
+                  child: TextField(
+                    controller: controller,
+                    decoration:
+                        const InputDecoration(hintText: "Enter user name"),
+                  ),
+                ),
+                ValueListenableBuilder(
+                    valueListenable: isValidUserNameBool,
+                    builder: (context, value, child) => ElevatedButton(
+                          onPressed: value
+                              ? () {
+                                  addUserDialog2(bleDoor, controller.text);
+                                }
+                              : null,
+                          style: TextButton.styleFrom(
+                            foregroundColor: Colors.white,
+                            backgroundColor: (isValidUserNameBool.value)
+                                ? Colors.green
+                                : Colors.grey, // text color
+                          ),
+                          child: const Text('Next'),
+                        )),
+              ],
+            ),
           );
         });
-    // Load all BleDoor objectsWidget
-
-    /*return const OpenerPage(
-      bleDeviceName: "SPR-Door2",
-      bleSharedKey: "Key",
-      bleDeviceInfoText:
-          'OwO this device is doing things i cant understand QwQ',
-    );*/
   }
 
-  Widget bleDoorWidget(BleDoor bleDoor) {
-    return Card(
-      color: Colors.black12,
-      child: Column(
-        children: [
-          Row(
-            children: [
-              const SizedBox(width: 5),
-              Expanded(
-                  child: Text(
-                bleDoor.lockName,
-                style: Theme.of(context).textTheme.displaySmall,
-              )),
-              ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                      backgroundColor: doorIsNearBy(bleDoor) ? Colors.green : Colors.grey,
-                    foregroundColor: Colors.white,),
+  void addUserDialog2(BleDoor bleDoor, String username) {
+    //gen a new BleDoor object and show the json as qrCode
+    BleDoor newBleDoor = BleDoor(
+        lockId: bleDoor.lockId,
+        lockName: bleDoor.lockName,
+        password: generateRandomString(32),
+        userName: username,
+        isAdmin: false);
 
-                  onPressed: () {
-                    connectAndOpenBleDoor(bleDoor);
-                  },
-                  child: const Text("Open")),
-              Container(
-                margin: const EdgeInsets.all(5),
-                child: ElevatedButton(
-                    style: TextButton.styleFrom(
-                      foregroundColor: Colors.white,
-                      backgroundColor: Colors.red, // text color
-                    ),
-                    onPressed: () async {
-                      //await BleDoorStorage.removeBleDoor(bleDoor);
-                      //await BleDoorStorage.loadBleDoors().then((value) {
-                      //  bleDoors.value = value;
-                      //});
-                      sureYouWantToRemoveDialog(context, bleDoor);
-                    },
-                    child: const Text("Remove")),
-              )
-            ],
+    String bleDoorJson = jsonEncode(newBleDoor.toJson());
+
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return Scaffold(
+          appBar: AppBar(
+            title: const Text('Add Door User'),
           ),
-          const Divider(
-            color: Colors.black12,
-            thickness: 2,
-            height: 2,
-          ),
-          Row(
+          body: Column(
             children: [
-              const SizedBox(width: 5),
-              Text("Info:", style: Theme.of(context).textTheme.titleLarge),
+              Text("User: $username"),
+              QrImageView(data: bleDoorJson, version: QrVersions.auto),
             ],
           ),
-          Row(
-            children: [
-              const SizedBox(width: 5),
-              Text("Lock ID: ${bleDoor.lockId}"),
-            ],
-          ),
-          Row(
-            children: [
-              const SizedBox(width: 5),
-              Text("User: ${bleDoor.userName}"),
-            ],
-          )
-        ],
-      ),
+        );
+      },
     );
   }
 
   bool doorIsNearBy(BleDoor bleDoor) {
-    return discoveredEventArgs.value
-        .where((element) {
+    return discoveredEventArgs.value.where((element) {
       return element.peripheral.uuid == bleDoor.lockId;
     }).isNotEmpty;
   }
 
   Future<void> connectAndOpenBleDoor(BleDoor bleDoor) async {
+    try {
     var peripheral = discoveredEventArgs.value
         .where((element) {
           return element.peripheral.uuid == bleDoor.lockId;
         })
         .first
         .peripheral;
-    await CentralManager.instance.disconnect(peripheral);
+    //await CentralManager.instance.disconnect(peripheral);
     await CentralManager.instance.connect(peripheral);
+    var discoverGATT = await CentralManager.instance.discoverGATT(peripheral);
 
-    CentralManager.instance.discoverGATT(peripheral).then((value) {
-      print("OwO4.1 $value");
-      value.forEach((element) {
-        print("OwO4.2 ${element.uuid}");
-        print("OwO4.3 ${element.characteristics}");
-        element.characteristics.forEach((element) {
-          print("OwO4.4 ${element.uuid}");
-          if (element.uuid == uuidLockStateCharacteristic) {
-            print("OwO4.5 ${element.uuid}");
-            CentralManager.instance.writeCharacteristic(element,
-                value: Uint8List.fromList(utf8.encode("2")),
-                type: GattCharacteristicWriteType.withoutResponse);
-          } else if (element.uuid == uuidUserCharacteristic) {
-            print("OwO4.6 ${element.uuid}");
-            CentralManager.instance.writeCharacteristic(element,
-                value: Uint8List.fromList(utf8.encode(bleDoor.userName)),
-                type: GattCharacteristicWriteType.withoutResponse);
-          } else if (element.uuid == uuidPassCharacteristic) {
-            print("OwO4.7 ${element.uuid}");
-            CentralManager.instance.writeCharacteristic(element,
-                value: Uint8List.fromList(utf8.encode(bleDoor.password)),
-                type: GattCharacteristicWriteType.withoutResponse);
-          }
-        });
-      });
-    });
+    await CentralManager.instance.writeCharacteristic(
+        discoverGATT
+            .expand((element) => element.characteristics)
+            .firstWhere((element) => element.uuid == uuidUserCharacteristic),
+        value: Uint8List.fromList(utf8.encode(bleDoor.userName)),
+        type: GattCharacteristicWriteType.withoutResponse);
+
+    await CentralManager.instance.writeCharacteristic(
+    discoverGATT
+        .expand((element) => element.characteristics)
+        .firstWhere((element) => element.uuid == uuidPassCharacteristic),
+    value: Uint8List.fromList(utf8.encode(bleDoor.password)),
+    type: GattCharacteristicWriteType.withoutResponse);
+
+    await CentralManager.instance.writeCharacteristic(
+        discoverGATT
+            .expand((element) => element.characteristics)
+            .firstWhere((element) => element.uuid == uuidLockStateCharacteristic),
+        value: Uint8List.fromList(utf8.encode("2")),
+        type: GattCharacteristicWriteType.withoutResponse);
+    } catch (error) {
+      errorDialog(context, error);
+      rethrow;
+    }
   }
 
   void addOpenerDialog(BuildContext context) {
@@ -344,14 +463,18 @@ class _BodyViewState extends State<BodyView> {
               title: const Text('Add Door Opener by QR-Code or JSON Payloa'),
             ),
             body: qrCodeScan(controller),
-            floatingActionButton:  TextField(
+            floatingActionButton: TextField(
               controller: controller,
-              decoration: const InputDecoration(hintText: "Enter something here"),
+              decoration:
+                  const InputDecoration(hintText: "Enter something here"),
             ),
             bottomNavigationBar: BottomAppBar(
               child: Row(
                 children: [
-                  Expanded(child: SizedBox(width: 10,)),
+                  Expanded(
+                      child: SizedBox(
+                    width: 10,
+                  )),
                   TextButton(
                     onPressed: () {
                       Navigator.of(context).pop();
@@ -362,27 +485,36 @@ class _BodyViewState extends State<BodyView> {
                     ),
                     child: const Text('Close'),
                   ),
-                  const SizedBox(width: 10,),
+                  const SizedBox(
+                    width: 10,
+                  ),
                   ValueListenableBuilder(
                     valueListenable: isJsonValid,
                     builder: (context, value, child) {
                       return TextButton(
-                        onPressed: value ? () async {
-                          Navigator.of(context).pop();
-                          //save opener
-                          String bleDoorJson = controller.text;
-                          print('You entered: $bleDoorJson');
-                          BleDoor deserializedBleDoor =
-                          BleDoor.fromJson(jsonDecode(bleDoorJson));
+                        onPressed: value
+                            ? () async {
+                                Navigator.of(context).pop();
+                                //save opener
+                                String bleDoorJson = controller.text;
+                                print('You entered: $bleDoorJson');
+                                BleDoor deserializedBleDoor =
+                                    BleDoor.fromJson(jsonDecode(bleDoorJson));
 
-                          await BleDoorStorage.addBleDoor(deserializedBleDoor);
-                          await BleDoorStorage.loadBleDoors().then((value) {
-                            bleDoors.value = value;
-                          });
-                          successAddDoorDialog(context);
-                        } : null, // Disable the button if the JSON is not valid
+                                await BleDoorStorage.addBleDoor(
+                                    deserializedBleDoor);
+                                await BleDoorStorage.loadBleDoors()
+                                    .then((value) {
+                                  bleDoors.value = value;
+                                });
+                                successAddDoorDialog(context);
+                              }
+                            : null, // Disable the button if the JSON is not valid
                         style: TextButton.styleFrom(
-                          foregroundColor: Colors.white, backgroundColor: (isJsonValid.value) ? Colors.green : Colors.grey, // text color
+                          foregroundColor: Colors.white,
+                          backgroundColor: (isJsonValid.value)
+                              ? Colors.green
+                              : Colors.grey, // text color
                         ),
                         child: const Text('Add Opener'),
                       );
@@ -407,7 +539,7 @@ class _BodyViewState extends State<BodyView> {
       },
     );
   }
-  
+
   void successAddDoorDialog(BuildContext context) {
     showDialog(
       context: context,
@@ -427,7 +559,7 @@ class _BodyViewState extends State<BodyView> {
       },
     );
   }
-  
+
   void successDialog(BuildContext context) {
     showDialog(
       context: context,
@@ -447,34 +579,14 @@ class _BodyViewState extends State<BodyView> {
       },
     );
   }
-  
-  void errorAddDoorDialog(BuildContext context) {
+
+  void errorDialog(BuildContext context, Object error) {
     showDialog(
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
           title: const Text('Error'),
-          content: const Text('The door could not be added'),
-          actions: <Widget>[
-            TextButton(
-              onPressed: () {
-                Navigator.of(context).pop();
-              },
-              child: const Text('Close'),
-            ),
-          ],
-        );
-      },
-    );
-  }
-  
-  void errorDialog(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: const Text('Error'),
-          content: const Text('The door could not be opened'),
+          content: Text('Error: $error'),
           actions: <Widget>[
             TextButton(
               onPressed: () {
@@ -493,7 +605,10 @@ class _BodyViewState extends State<BodyView> {
     return Scaffold(
         appBar: AppBar(
           backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-          title: const Text("Door Opener"),
+          title: GestureDetector(
+              onLongPress: () =>
+                  showAllBLEDevices.value = !showAllBLEDevices.value,
+              child: const Text("Door Opener")),
           actions: [
             ElevatedButton(
                 style: ElevatedButton.styleFrom(
