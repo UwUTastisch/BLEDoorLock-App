@@ -236,7 +236,7 @@ class _BodyViewState extends State<BodyView> {
                       ),
                       onPressed: (isInteractable)
                           ? () {
-                              connectAndOpenBleDoor(bleDoor);
+                              connectAndOpenBleDoor(context, bleDoor);
                             }
                           : () {},
                       child: const Text("Open")),
@@ -321,7 +321,6 @@ class _BodyViewState extends State<BodyView> {
               onTap: () {
                 Navigator.of(context).pop();
                 sureYouWantToRemoveDialog(context, bleDoor);
-                // TODO: Implement delete door functionality
               },
             ),
             // Add more admin options here
@@ -505,7 +504,7 @@ class _BodyViewState extends State<BodyView> {
     }).isNotEmpty;
   }
 
-  Future<void> connectAndOpenBleDoor(BleDoor bleDoor) async {
+  Future<void> connectAndOpenBleDoor(BuildContext context, BleDoor bleDoor) async {
     try {
       var peripheral = discoveredEventArgs.value
           .where((element) {
@@ -567,11 +566,13 @@ class _BodyViewState extends State<BodyView> {
               title: const Text('Add Door Opener by QR-Code or JSON Payloa'),
             ),
             body: qrCodeScan(controller),
-            floatingActionButton: TextField(
-              controller: controller,
-              decoration:
-                  const InputDecoration(hintText: "Enter something here"),
-            ),
+            floatingActionButton: Container(
+              margin: const EdgeInsets.symmetric(horizontal: 10),
+              child: TextField(
+                controller: controller,
+                decoration: const InputDecoration(
+                    hintText: "Enter JSON Payload here"),
+              )),
             bottomNavigationBar: BottomAppBar(
               child: Row(
                 children: [
@@ -603,7 +604,6 @@ class _BodyViewState extends State<BodyView> {
                                 String bleDoorJson = controller.text;
                                 BleDoor deserializedBleDoor =
                                     BleDoor.fromJson(jsonDecode(bleDoorJson));
-
                                 await BleDoorStorage.addBleDoor(
                                     deserializedBleDoor);
                                 await BleDoorStorage.loadBleDoors()
@@ -630,16 +630,22 @@ class _BodyViewState extends State<BodyView> {
     );
   }
 
-  QRCodeDartScanView qrCodeScan(TextEditingController controller) {
-    return QRCodeDartScanView(
-      scanInvertedQRCode: true, // enable scan invert qr code ( default = false)
-
-      typeScan: TypeScan.live,
-      onCapture: (Result result) {
-        //print("OwO Result: ${result.text}");
-        //update textfield
-        controller.text = result.text;
-      },
+  Widget qrCodeScan(TextEditingController controller) {
+    var qrCodeDartScanController = QRCodeDartScanController();
+    return Transform.rotate(
+      angle: rightAngle(), // Rotate 90 degrees counter clockwise
+      child: QRCodeDartScanView(
+        typeCamera: TypeCamera.back,
+        //widthPreview: 400,
+        //heightPreview: 400,
+        controller: qrCodeDartScanController,
+        typeScan: TypeScan.live,
+        onCapture: (Result result) {
+          //print("OwO Result: ${result.text}");
+          //update textfield
+          controller.text = result.text;
+        },
+      ),
     );
   }
 
