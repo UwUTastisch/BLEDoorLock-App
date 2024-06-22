@@ -6,7 +6,6 @@ import 'dart:io';
 import 'package:ble_doorlock_opener/storage/ble-door-storage.dart';
 import 'package:ble_doorlock_opener/utils.dart';
 import 'package:bluetooth_low_energy/bluetooth_low_energy.dart';
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -74,7 +73,7 @@ class MyApp extends StatelessWidget {
             seedColor: Colors.pink,
           ),
         ),
-        home: BodyView());
+        home: const BodyView());
   }
 }
 
@@ -125,9 +124,6 @@ class _BodyViewState extends State<BodyView> {
   void _initialize() async {
     state.value = await CentralManager.instance.getState();
     List<BleDoor> loadedBleDoors = await BleDoorStorage.loadBleDoors();
-    loadedBleDoors.forEach((door) {
-      print('Loaded BleDoor: ${door.toJson()}');
-    });
     bleDoors.value = loadedBleDoors;
 
     startDiscovery();
@@ -183,7 +179,7 @@ class _BodyViewState extends State<BodyView> {
       final rssi = item.rssi;
       final advertisement = item.advertisement;
       final name = advertisement.name;
-      if(advertisement.name == null) {
+      if (advertisement.name == null) {
         continue;
       }
       widgets.add(Column(children: [
@@ -201,7 +197,6 @@ class _BodyViewState extends State<BodyView> {
                   userName: "spr");
               String bleDoorJson = jsonEncode(bleDoor.toJson());
               Clipboard.setData(ClipboardData(text: bleDoorJson));
-              print("Example door $bleDoorJson");
             },
             child: const Text("Copy ID")),
       ]));
@@ -209,13 +204,16 @@ class _BodyViewState extends State<BodyView> {
     return widgets;
   }
 
-  Widget bleDoorWidget(BuildContext context, BleDoor bleDoor) {
+  Widget bleDoorWidget(BuildContext context, BleDoor bleDoor,
+      {bool isInteractable = true}) {
     return GestureDetector(
-      onLongPress: () {
-        showAdminMenu(context, bleDoor);
-      },
+      onLongPress: (isInteractable)
+          ? () {
+              showAdminMenu(context, bleDoor);
+            }
+          : null,
       child: Card(
-        color: Colors.black12,
+        color: bleDoor.color ?? Colors.black12,
         child: Column(
           children: [
             Row(
@@ -231,12 +229,16 @@ class _BodyViewState extends State<BodyView> {
                   child: ElevatedButton(
                       style: ElevatedButton.styleFrom(
                         backgroundColor:
-                            doorIsNearBy(bleDoor) ? Colors.green : Colors.grey,
+                            doorIsNearBy(bleDoor) || !isInteractable
+                                ? Colors.green
+                                : Colors.grey,
                         foregroundColor: Colors.white,
                       ),
-                      onPressed: () {
-                        connectAndOpenBleDoor(bleDoor);
-                      },
+                      onPressed: (isInteractable)
+                          ? () {
+                              connectAndOpenBleDoor(bleDoor);
+                            }
+                          : () {},
                       child: const Text("Open")),
                 )
                 //Container(
@@ -299,14 +301,25 @@ class _BodyViewState extends State<BodyView> {
                 leading: const Icon(Icons.add),
                 title: const Text('Add Door User'),
                 onTap: () {
-                  addUserDialog1(bleDoor);
+                  Navigator.of(context).pop();
+                  addUserDialog1(context, bleDoor);
                 },
               ),
             if (bleDoor.isAdmin) const Divider(thickness: 2, height: 0),
             ListTile(
+              leading: const Icon(Icons.edit),
+              title: const Text('Edit Door'),
+              onTap: () {
+                Navigator.of(context).pop();
+                editDoorDialog(context, bleDoor);
+              },
+            ),
+            const Divider(thickness: 2, height: 0),
+            ListTile(
               leading: const Icon(Icons.delete, color: Colors.red),
               title: const Text('Delete Door'),
               onTap: () {
+                Navigator.of(context).pop();
                 sureYouWantToRemoveDialog(context, bleDoor);
                 // TODO: Implement delete door functionality
               },
@@ -318,7 +331,98 @@ class _BodyViewState extends State<BodyView> {
     );
   }
 
-  void addUserDialog1(BleDoor bleDoor) {
+  void editDoorDialog(BuildContext context, BleDoor bleDoor) {
+    ValueNotifier<Color?> color = ValueNotifier<Color?>(bleDoor.color);
+    TextEditingController controller =
+        TextEditingController(text: bleDoor.lockName);
+    ValueNotifier<bool> isValidDoorNameBool =
+        ValueNotifier<bool>(isValidUsername(controller.text));
+
+    controller.addListener(() {
+      isValidDoorNameBool.value = isValidUsername(controller.text);
+    });
+
+    BleDoor previewBuild() {
+      return BleDoor(
+        lockId: bleDoor.lockId,
+        lockName: controller.text,
+        userName: bleDoor.userName,
+        password: bleDoor.password,
+        isAdmin: bleDoor.isAdmin,
+        color: color.value,
+      );
+    }
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return Scaffold(
+          appBar: AppBar(
+            title: const Text('Edit Door'),
+          ),
+          body: Column(
+            children: [
+              //Colorpicker
+              const SizedBox(height: 20),
+              Text("Color", style: Theme.of(context).textTheme.titleLarge),
+              ColorPicker(
+                color: color,
+              ),
+              const SizedBox(height: 20),
+              //Name
+              Text("Door name", style: Theme.of(context).textTheme.titleLarge),
+              Container(
+                margin: const EdgeInsets.symmetric(horizontal: 15),
+                color: Colors.black12,
+                child: TextField(
+                  controller: controller,
+                  decoration:
+                      const InputDecoration(hintText: "Enter door name"),
+                ),
+              ),
+              const SizedBox(height: 20),
+              Text("Preview", style: Theme.of(context).textTheme.titleLarge),
+              ValueListenableBuilder(
+                valueListenable: controller,
+                builder: (context, bleName, child) => ValueListenableBuilder(
+                  valueListenable: color,
+                  builder: (context, color, child) {
+                    return bleDoorWidget(context, previewBuild(),
+                        isInteractable: false);
+                  },
+                ),
+              ),
+              const SizedBox(height: 20),
+              ValueListenableBuilder(
+                valueListenable: isValidDoorNameBool,
+                builder: (context, value, child) => ElevatedButton(
+                  onPressed: value
+                      ? () async {
+                          //remove old door
+                          await BleDoorStorage.updateBleDoor(previewBuild());
+                          await BleDoorStorage.loadBleDoors().then((value) {
+                            bleDoors.value = value;
+                          });
+                          Navigator.of(context).pop();
+                        }
+                      : null,
+                  style: TextButton.styleFrom(
+                    foregroundColor: Colors.white,
+                    backgroundColor: (isValidDoorNameBool.value)
+                        ? Colors.green
+                        : Colors.grey, // text color
+                  ),
+                  child: const Text('Save'),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  void addUserDialog1(BuildContext context, BleDoor bleDoor) {
     TextEditingController controller = TextEditingController();
     ValueNotifier<bool> isValidUserNameBool = ValueNotifier<bool>(false);
 
@@ -348,7 +452,8 @@ class _BodyViewState extends State<BodyView> {
                     builder: (context, value, child) => ElevatedButton(
                           onPressed: value
                               ? () {
-                                  addUserDialog2(bleDoor, controller.text);
+                                  addUserDialog2(
+                                      context, bleDoor, controller.text);
                                 }
                               : null,
                           style: TextButton.styleFrom(
@@ -365,7 +470,7 @@ class _BodyViewState extends State<BodyView> {
         });
   }
 
-  void addUserDialog2(BleDoor bleDoor, String username) {
+  void addUserDialog2(BuildContext context, BleDoor bleDoor, String username) {
     //gen a new BleDoor object and show the json as qrCode
     BleDoor newBleDoor = BleDoor(
         lockId: bleDoor.lockId,
@@ -402,36 +507,35 @@ class _BodyViewState extends State<BodyView> {
 
   Future<void> connectAndOpenBleDoor(BleDoor bleDoor) async {
     try {
-    var peripheral = discoveredEventArgs.value
-        .where((element) {
-          return element.peripheral.uuid == bleDoor.lockId;
-        })
-        .first
-        .peripheral;
-    //await CentralManager.instance.disconnect(peripheral);
-    await CentralManager.instance.connect(peripheral);
-    var discoverGATT = await CentralManager.instance.discoverGATT(peripheral);
+      var peripheral = discoveredEventArgs.value
+          .where((element) {
+            return element.peripheral.uuid == bleDoor.lockId;
+          })
+          .first
+          .peripheral;
+      //await CentralManager.instance.disconnect(peripheral);
+      await CentralManager.instance.connect(peripheral);
+      var discoverGATT = await CentralManager.instance.discoverGATT(peripheral);
 
-    await CentralManager.instance.writeCharacteristic(
-        discoverGATT
-            .expand((element) => element.characteristics)
-            .firstWhere((element) => element.uuid == uuidUserCharacteristic),
-        value: Uint8List.fromList(utf8.encode(bleDoor.userName)),
-        type: GattCharacteristicWriteType.withoutResponse);
+      await CentralManager.instance.writeCharacteristic(
+          discoverGATT
+              .expand((element) => element.characteristics)
+              .firstWhere((element) => element.uuid == uuidUserCharacteristic),
+          value: Uint8List.fromList(utf8.encode(bleDoor.userName)),
+          type: GattCharacteristicWriteType.withoutResponse);
 
-    await CentralManager.instance.writeCharacteristic(
-    discoverGATT
-        .expand((element) => element.characteristics)
-        .firstWhere((element) => element.uuid == uuidPassCharacteristic),
-    value: Uint8List.fromList(utf8.encode(bleDoor.password)),
-    type: GattCharacteristicWriteType.withoutResponse);
+      await CentralManager.instance.writeCharacteristic(
+          discoverGATT
+              .expand((element) => element.characteristics)
+              .firstWhere((element) => element.uuid == uuidPassCharacteristic),
+          value: Uint8List.fromList(utf8.encode(bleDoor.password)),
+          type: GattCharacteristicWriteType.withoutResponse);
 
-    await CentralManager.instance.writeCharacteristic(
-        discoverGATT
-            .expand((element) => element.characteristics)
-            .firstWhere((element) => element.uuid == uuidLockStateCharacteristic),
-        value: Uint8List.fromList(utf8.encode("2")),
-        type: GattCharacteristicWriteType.withoutResponse);
+      await CentralManager.instance.writeCharacteristic(
+          discoverGATT.expand((element) => element.characteristics).firstWhere(
+              (element) => element.uuid == uuidLockStateCharacteristic),
+          value: Uint8List.fromList(utf8.encode("2")),
+          type: GattCharacteristicWriteType.withoutResponse);
     } catch (error) {
       errorDialog(context, error);
       rethrow;
@@ -471,7 +575,7 @@ class _BodyViewState extends State<BodyView> {
             bottomNavigationBar: BottomAppBar(
               child: Row(
                 children: [
-                  Expanded(
+                  const Expanded(
                       child: SizedBox(
                     width: 10,
                   )),
@@ -497,7 +601,6 @@ class _BodyViewState extends State<BodyView> {
                                 Navigator.of(context).pop();
                                 //save opener
                                 String bleDoorJson = controller.text;
-                                print('You entered: $bleDoorJson');
                                 BleDoor deserializedBleDoor =
                                     BleDoor.fromJson(jsonDecode(bleDoorJson));
 
@@ -533,7 +636,7 @@ class _BodyViewState extends State<BodyView> {
 
       typeScan: TypeScan.live,
       onCapture: (Result result) {
-        print("OwO Result: ${result.text}");
+        //print("OwO Result: ${result.text}");
         //update textfield
         controller.text = result.text;
       },
@@ -651,14 +754,69 @@ class _BodyViewState extends State<BodyView> {
               onPressed: () {
                 Navigator.of(context).pop();
               },
-              child: const Text('No'),
               style: TextButton.styleFrom(
                 foregroundColor: Colors.white,
                 backgroundColor: Colors.green, // text color
               ),
+              child: const Text('No'),
             ),
           ],
         );
+      },
+    );
+  }
+}
+
+class ColorPicker extends StatelessWidget {
+  final ValueNotifier<Color?> color;
+
+  const ColorPicker({super.key, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder(
+      valueListenable: color,
+      builder: (context, color, child) {
+        return SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                for (var c in [
+                  Colors.red,
+                  Colors.green,
+                  Colors.blue,
+                  Colors.yellow,
+                  Colors.purple,
+                  Colors.orange,
+                  Colors.pink,
+                  Colors.teal,
+                  Colors.brown,
+                  Colors.grey,
+                  Colors.black,
+                  Colors.white,
+                ])
+                  GestureDetector(
+                    onTap: () {
+                      this.color.value = c;
+                    },
+                    child: Container(
+                      width: 30,
+                      height: 30,
+                      decoration: BoxDecoration(
+                        color: c,
+                        border: Border.all(
+                          // Add a border if the color is the selected color
+                          color: this.color.value == c
+                              ? Colors.black
+                              : Colors.transparent,
+                          width: 2,
+                        ),
+                      ),
+                      margin: const EdgeInsets.all(5),
+                    ),
+                  ),
+              ],
+            ));
       },
     );
   }

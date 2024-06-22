@@ -33,4 +33,17 @@ class BleDoorStorage {
       return BleDoor.fromJson(doorMap);
     }).toList();
   }
+
+  static Future<void> updateBleDoor(BleDoor bleDoor) async {
+    final prefs = await SharedPreferences.getInstance();
+    final bleDoorMap = bleDoor.toJson();
+    final bleDoorJson = jsonEncode(bleDoorMap);
+    List<String> bleDoors = prefs.getStringList(_bleDoorKey) ?? [];
+    final index = bleDoors.indexWhere((door) {
+      final doorMap = jsonDecode(door) as Map<String, dynamic>;
+      return doorMap['lockId'] == bleDoor.lockId.toString();
+    });
+    bleDoors[index] = bleDoorJson;
+    await prefs.setStringList(_bleDoorKey, bleDoors);
+  }
 }
