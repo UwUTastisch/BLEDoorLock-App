@@ -17,12 +17,33 @@ import 'models/ble-door.dart';
 bool get enablePeripheral => !Platform.isLinux && !Platform.isWindows;
 
 final ValueNotifier<bool> showAllBLEDevices = ValueNotifier(false);
+
+// UUIDs for the BLE characteristics for the door opener
 final uuidUserCharacteristic =
     UUID.fromString("5d3932fa-2901-4b6b-9f41-7720976a85d4");
 final uuidPassCharacteristic =
     UUID.fromString("dd16cad0-a66a-402f-9183-201c20753647");
 final uuidLockStateCharacteristic =
     UUID.fromString("05c5653a-7279-406c-9f9e-df72aa99ca2d");
+
+/*
+#define UUID_ADMIN_CHARACTERISTIC "68f2b041-dc1e-42af-af96-773a2386b08b"
+#define UUID_ADMINPASS_CHARACTERISTIC "394e8790-109b-47c0-aa67-1aa61c02188b"
+#define UUID_ADDUSER_CHARACTERISTIC "92acb83b-ff02-43ec-9adb-16755eb8ce9b"
+#define UUID_ADDPASS_CHARACTERISTIC "8de8c0c0-0568-40a0-a52b-520a6e772503"
+#define UUID_ADMINACTION_CHARACTERISTIC "b1d86fdf-7d5d-49b7-8da7-b02bd53bdb0a"
+*/
+// UUIDs for the BLE characteristics for adding a user as admin
+final uuidAdminCharacteristic =
+    UUID.fromString("68f2b041-dc1e-42af-af96-773a2386b08b");
+final uuidAdminPassCharacteristic =
+    UUID.fromString("394e8790-109b-47c0-aa67-1aa61c02188b");
+final uuidAddUserCharacteristic =
+    UUID.fromString("92acb83b-ff02-43ec-9adb-16755eb8ce9b");
+final uuidAddPassCharacteristic =
+    UUID.fromString("8de8c0c0-0568-40a0-a52b-520a6e772503");
+final uuidAdminActionCharacteristic =
+    UUID.fromString("b1d86fdf-7d5d-49b7-8da7-b02bd53bdb0a");
 
 void main() {
   runZonedGuarded(onStartUp, onCrashed);
@@ -491,6 +512,18 @@ class _BodyViewState extends State<BodyView> {
             children: [
               Text("User: $username"),
               QrImageView(data: bleDoorJson, version: QrVersions.auto),
+              ElevatedButton(
+                  onPressed: () async {
+                    await connectAndAddUser(context, bleDoor, newBleDoor);
+                    /*
+                    await BleDoorStorage.addBleDoor(newBleDoor);
+                    await BleDoorStorage.loadBleDoors().then((value) {
+                      bleDoors.value = value;
+                    });
+                     */
+                    Navigator.of(context).pop();
+                  },
+                  child: const Text("Add User"))
             ],
           ),
         );
@@ -504,7 +537,8 @@ class _BodyViewState extends State<BodyView> {
     }).isNotEmpty;
   }
 
-  Future<void> connectAndOpenBleDoor(BuildContext context, BleDoor bleDoor) async {
+  Future<void> connectAndOpenBleDoor(
+      BuildContext context, BleDoor bleDoor) async {
     try {
       var peripheral = discoveredEventArgs.value
           .where((element) {
@@ -541,6 +575,59 @@ class _BodyViewState extends State<BodyView> {
     }
   }
 
+  Future<void> connectAndAddUser(
+      BuildContext context, BleDoor admin, BleDoor newUser) async {
+    try {
+      var peripheral = discoveredEventArgs.value
+          .where((element) {
+            return element.peripheral.uuid == admin.lockId;
+          })
+          .first
+          .peripheral;
+      await CentralManager.instance.connect(peripheral);
+      var discoverGATT = await CentralManager.instance.discoverGATT(peripheral);
+      print("Connected to ${admin.lockName} with UUID ${admin.lockId} and following characteristics: ${discoverGATT.expand((element) => element.characteristics).map((e) => e.uuid).toList()}");
+      for (var characteristic in discoverGATT.expand((element) => element.characteristics)) {
+        print("Characteristic: ${characteristic.uuid} and ${characteristic.properties}");
+      }
+
+      await CentralManager.instance.writeCharacteristic(
+          discoverGATT
+              .expand((element) => element.characteristics)
+              .firstWhere((element) => element.uuid == uuidAdminCharacteristic),
+          value: Uint8List.fromList(utf8.encode(admin.userName)),
+          type: GattCharacteristicWriteType.withoutResponse);
+      print("Wrote Admin User");
+      await CentralManager.instance.writeCharacteristic(
+          discoverGATT
+              .expand((element) => element.characteristics)
+              .firstWhere((element) => element.uuid == uuidAdminPassCharacteristic),
+          value: Uint8List.fromList(utf8.encode(admin.password)),
+          type: GattCharacteristicWriteType.withoutResponse);
+      print("Wrote Admin Pass");
+      await CentralManager.instance.writeCharacteristic(
+          discoverGATT.expand((element) => element.characteristics).firstWhere(
+              (element) => element.uuid == uuidAddUserCharacteristic),
+          value: Uint8List.fromList(utf8.encode(newUser.userName)),
+          type: GattCharacteristicWriteType.withoutResponse);
+      print("Wrote New User");
+      await CentralManager.instance.writeCharacteristic(
+          discoverGATT.expand((element) => element.characteristics).firstWhere(
+              (element) => element.uuid == uuidAddPassCharacteristic),
+          value: Uint8List.fromList(utf8.encode(newUser.password)),
+          type: GattCharacteristicWriteType.withoutResponse);
+      print("Wrote New Pass");
+      await CentralManager.instance.writeCharacteristic(
+          discoverGATT.expand((element) => element.characteristics).firstWhere(
+              (element) => element.uuid == uuidAdminActionCharacteristic),
+          value: Uint8List.fromList(utf8.encode("1")),
+          type: GattCharacteristicWriteType.withoutResponse);
+    } catch (error) {
+      errorDialog(context, error);
+      rethrow;
+    }
+  }
+
   void addOpenerDialog(BuildContext context) {
     TextEditingController controller = TextEditingController();
     ValueNotifier<bool> isJsonValid = ValueNotifier<bool>(false);
@@ -567,12 +654,12 @@ class _BodyViewState extends State<BodyView> {
             ),
             body: qrCodeScan(controller),
             floatingActionButton: Container(
-              margin: const EdgeInsets.symmetric(horizontal: 10),
-              child: TextField(
-                controller: controller,
-                decoration: const InputDecoration(
-                    hintText: "Enter JSON Payload here"),
-              )),
+                margin: const EdgeInsets.symmetric(horizontal: 10),
+                child: TextField(
+                  controller: controller,
+                  decoration: const InputDecoration(
+                      hintText: "Enter JSON Payload here"),
+                )),
             bottomNavigationBar: BottomAppBar(
               child: Row(
                 children: [
