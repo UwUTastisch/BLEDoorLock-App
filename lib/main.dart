@@ -12,6 +12,7 @@ import 'package:flutter/services.dart';
 import 'package:qr_code_dart_scan/qr_code_dart_scan.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
+import 'custom-theme.dart';
 import 'models/ble-door.dart';
 
 bool get enablePeripheral => !Platform.isLinux && !Platform.isWindows;
@@ -26,13 +27,6 @@ final uuidPassCharacteristic =
 final uuidLockStateCharacteristic =
     UUID.fromString("05c5653a-7279-406c-9f9e-df72aa99ca2d");
 
-/*
-#define UUID_ADMIN_CHARACTERISTIC "68f2b041-dc1e-42af-af96-773a2386b08b"
-#define UUID_ADMINPASS_CHARACTERISTIC "394e8790-109b-47c0-aa67-1aa61c02188b"
-#define UUID_ADDUSER_CHARACTERISTIC "92acb83b-ff02-43ec-9adb-16755eb8ce9b"
-#define UUID_ADDPASS_CHARACTERISTIC "8de8c0c0-0568-40a0-a52b-520a6e772503"
-#define UUID_ADMINACTION_CHARACTERISTIC "b1d86fdf-7d5d-49b7-8da7-b02bd53bdb0a"
-*/
 // UUIDs for the BLE characteristics for adding a user as admin
 final uuidAdminCharacteristic =
     UUID.fromString("68f2b041-dc1e-42af-af96-773a2386b08b");
@@ -81,25 +75,46 @@ void onLogRecord(LogRecord record) {
 
 // Show widgets
 
-class MyApp extends StatelessWidget {
+class MyApp extends StatefulWidget {
   const MyApp({super.key});
 
-  // This widget is the root of your application.
+  @override
+  State<MyApp> createState() => _MyAppState();
+}
+
+class _MyAppState extends State<MyApp> {
+  bool isDarkMode = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Detect the current system brightness and set the theme accordingly
+    final Brightness brightness = MediaQuery.of(context).platformBrightness;
+    isDarkMode = brightness == Brightness.dark;
+  }
+
+  void toggleDarkMode() {
+    setState(() {
+      isDarkMode = !isDarkMode;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-        title: 'BLE-Door-Opener',
-        theme: ThemeData(
-          colorScheme: ColorScheme.fromSeed(
-            seedColor: Colors.pink,
-          ),
-        ),
-        home: const BodyView());
+      title: 'BLE-Door-Opener',
+      theme: CustomTheme.lightTheme,
+      darkTheme: CustomTheme.darkTheme,
+      themeMode: isDarkMode ? ThemeMode.dark : ThemeMode.light,
+      home: BodyView(toggleDarkMode: toggleDarkMode),
+    );
   }
 }
 
 class BodyView extends StatefulWidget {
-  const BodyView({super.key});
+  final Function toggleDarkMode;
+
+  const BodyView({super.key, required this.toggleDarkMode});
 
   @override
   State<BodyView> createState() => _BodyViewState();
@@ -112,6 +127,7 @@ class _BodyViewState extends State<BodyView> {
   late final StreamSubscription stateChangedSubscription;
   late final StreamSubscription discoveredSubscription;
   late final ValueNotifier<List<BleDoor>> bleDoors;
+  Map<String, bool> expansionState = {};
 
   @override
   void initState() {
@@ -192,7 +208,6 @@ class _BodyViewState extends State<BodyView> {
 
   List<Widget> bleListeningWidgets(
       BuildContext context, List<DiscoveredEventArgs> discoveredEventArgs) {
-    // List<Widget> bleListeningWidgets(BuildContext context, List<DiscoveredEventArgs> discoveredEventArgs) {
     List<Widget> widgets = [];
 
     for (var item in discoveredEventArgs) {
@@ -205,7 +220,7 @@ class _BodyViewState extends State<BodyView> {
       }
       widgets.add(Column(children: [
         Text(
-            "Name -> $name, \n UUID -> $uuid, \n RSSI -> $rssi, \n Advertisment -> $advertisement"),
+            "Name -> $name, \n UUID -> $uuid, \n RSSI -> $rssi, \n Advertisement -> $advertisement"),
         ElevatedButton(
             style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.orange // foreground
@@ -227,6 +242,18 @@ class _BodyViewState extends State<BodyView> {
 
   Widget bleDoorWidget(BuildContext context, BleDoor bleDoor,
       {bool isInteractable = true}) {
+    final String key = BleDoor(
+            lockId: bleDoor.lockId,
+            lockName: bleDoor.lockName,
+            userName: bleDoor.userName,
+            password: bleDoor.password,
+            isAdmin: bleDoor.isAdmin,
+            color: null)
+        .toJson()
+        .toString();
+    expansionState.putIfAbsent(key, () => false);
+    bool isExpanded = expansionState[key]!;
+
     return GestureDetector(
       onLongPress: (isInteractable)
           ? () {
@@ -234,71 +261,77 @@ class _BodyViewState extends State<BodyView> {
             }
           : null,
       child: Card(
-        color: bleDoor.color ?? Colors.black12,
+        margin: const EdgeInsets.symmetric(vertical: 10, horizontal: 10),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(15.0),
+        ),
         child: Column(
           children: [
-            Row(
-              children: [
-                const SizedBox(width: 5),
-                Expanded(
-                    child: Text(
+            Container(
+              decoration: BoxDecoration(
+                color: bleDoor.color ?? Colors.black12,
+                borderRadius: BorderRadius.only(
+                  topLeft: const Radius.circular(15.0),
+                  topRight: const Radius.circular(15.0),
+                  bottomLeft:
+                      isExpanded ? Radius.zero : const Radius.circular(15.0),
+                  bottomRight:
+                      isExpanded ? Radius.zero : const Radius.circular(15.0),
+                ),
+              ),
+              child: ListTile(
+                title: Text(
                   bleDoor.lockName,
-                  style: Theme.of(context).textTheme.displaySmall,
-                )),
-                Container(
-                  margin: const EdgeInsets.all(5),
-                  child: ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor:
-                            doorIsNearBy(bleDoor) || !isInteractable
-                                ? Colors.green
-                                : Colors.grey,
-                        foregroundColor: Colors.white,
+                  style: const TextStyle(
+                      color: Colors.white, fontWeight: FontWeight.bold),
+                ),
+                trailing: ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: doorIsNearBy(bleDoor) || !isInteractable
+                        ? Colors.green
+                        : Colors.grey,
+                    foregroundColor: Colors.white,
+                  ),
+                  onPressed: (isInteractable)
+                      ? () {
+                          connectAndOpenBleDoor(context, bleDoor);
+                        }
+                      : null,
+                  child: const Text("Open"),
+                ),
+                onTap: () {
+                  setState(() {
+                    expansionState[key] = !isExpanded;
+                  });
+                },
+              ),
+            ),
+            isExpanded
+                ? Container(
+                    decoration: BoxDecoration(
+                      color: adjustBrightness(
+                          bleDoor.color ?? Colors.black12,
+                          Theme.of(context).brightness == Brightness.dark
+                              ? -0.2
+                              : 0.2),
+                      borderRadius: const BorderRadius.only(
+                        bottomLeft: Radius.circular(15.0),
+                        bottomRight: Radius.circular(15.0),
                       ),
-                      onPressed: (isInteractable)
-                          ? () {
-                              connectAndOpenBleDoor(context, bleDoor);
-                            }
-                          : () {},
-                      child: const Text("Open")),
-                )
-                //Container(
-                //  margin: const EdgeInsets.all(5),
-                //  child: ElevatedButton(
-                //      style: TextButton.styleFrom(
-                //        foregroundColor: Colors.white,
-                //        backgroundColor: Colors.red, // text color
-                //      ),
-                //      onPressed: () async {
-                //        sureYouWantToRemoveDialog(context, bleDoor);
-                //      },
-                //      child: Icon(Icons.delete)),
-                //)
-              ],
-            ),
-            const Divider(
-              color: Colors.black12,
-              thickness: 2,
-              height: 2,
-            ),
-            Row(
-              children: [
-                const SizedBox(width: 5),
-                Text("Info:", style: Theme.of(context).textTheme.titleLarge),
-              ],
-            ),
-            Row(
-              children: [
-                const SizedBox(width: 5),
-                Text("Lock ID: ${bleDoor.lockId}"),
-              ],
-            ),
-            Row(
-              children: [
-                const SizedBox(width: 5),
-                Text("User: ${bleDoor.userName}"),
-              ],
-            )
+                    ),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16.0, vertical: 8.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text("Info:",
+                            style: TextStyle(color: Colors.black)),
+                        Text("Lock ID: ${bleDoor.lockId}"),
+                        Text("User: ${bleDoor.userName}"),
+                      ],
+                    ),
+                  )
+                : const SizedBox.shrink(),
           ],
         ),
       ),
@@ -515,12 +548,6 @@ class _BodyViewState extends State<BodyView> {
               ElevatedButton(
                   onPressed: () async {
                     await connectAndAddUser(context, bleDoor, newBleDoor);
-                    /*
-                    await BleDoorStorage.addBleDoor(newBleDoor);
-                    await BleDoorStorage.loadBleDoors().then((value) {
-                      bleDoors.value = value;
-                    });
-                     */
                     Navigator.of(context).pop();
                   },
                   child: const Text("Add User"))
@@ -546,7 +573,6 @@ class _BodyViewState extends State<BodyView> {
           })
           .first
           .peripheral;
-      //await CentralManager.instance.disconnect(peripheral);
       await CentralManager.instance.connect(peripheral);
       var discoverGATT = await CentralManager.instance.discoverGATT(peripheral);
 
@@ -586,9 +612,12 @@ class _BodyViewState extends State<BodyView> {
           .peripheral;
       await CentralManager.instance.connect(peripheral);
       var discoverGATT = await CentralManager.instance.discoverGATT(peripheral);
-      print("Connected to ${admin.lockName} with UUID ${admin.lockId} and following characteristics: ${discoverGATT.expand((element) => element.characteristics).map((e) => e.uuid).toList()}");
-      for (var characteristic in discoverGATT.expand((element) => element.characteristics)) {
-        print("Characteristic: ${characteristic.uuid} and ${characteristic.properties}");
+      print(
+          "Connected to ${admin.lockName} with UUID ${admin.lockId} and following characteristics: ${discoverGATT.expand((element) => element.characteristics).map((e) => e.uuid).toList()}");
+      for (var characteristic
+          in discoverGATT.expand((element) => element.characteristics)) {
+        print(
+            "Characteristic: ${characteristic.uuid} and ${characteristic.properties}");
       }
 
       await CentralManager.instance.writeCharacteristic(
@@ -599,9 +628,8 @@ class _BodyViewState extends State<BodyView> {
           type: GattCharacteristicWriteType.withoutResponse);
       print("Wrote Admin User");
       await CentralManager.instance.writeCharacteristic(
-          discoverGATT
-              .expand((element) => element.characteristics)
-              .firstWhere((element) => element.uuid == uuidAdminPassCharacteristic),
+          discoverGATT.expand((element) => element.characteristics).firstWhere(
+              (element) => element.uuid == uuidAdminPassCharacteristic),
           value: Uint8List.fromList(utf8.encode(admin.password)),
           type: GattCharacteristicWriteType.withoutResponse);
       print("Wrote Admin Pass");
@@ -650,7 +678,7 @@ class _BodyViewState extends State<BodyView> {
       builder: (BuildContext context) {
         return Scaffold(
             appBar: AppBar(
-              title: const Text('Add Door Opener by QR-Code or JSON Payloa'),
+              title: const Text('Add Door Opener by QR-Code or JSON Payload'),
             ),
             body: qrCodeScan(controller),
             floatingActionButton: Container(
@@ -723,13 +751,9 @@ class _BodyViewState extends State<BodyView> {
       angle: rightAngle(), // Rotate 90 degrees counter clockwise
       child: QRCodeDartScanView(
         typeCamera: TypeCamera.back,
-        //widthPreview: 400,
-        //heightPreview: 400,
         controller: qrCodeDartScanController,
         typeScan: TypeScan.live,
         onCapture: (Result result) {
-          //print("OwO Result: ${result.text}");
-          //update textfield
           controller.text = result.text;
         },
       ),
@@ -799,26 +823,34 @@ class _BodyViewState extends State<BodyView> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-        appBar: AppBar(
-          backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-          title: GestureDetector(
-              onLongPress: () =>
-                  showAllBLEDevices.value = !showAllBLEDevices.value,
-              child: const Text("Door Opener")),
-          actions: [
-            ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.orange // foreground
-                    ),
-                onPressed: () async {
-                  addOpenerDialog(context);
-                },
-                child: const Text("Add Opener"))
-          ],
+      appBar: AppBar(
+        backgroundColor: Theme.of(context).brightness == Brightness.dark
+            ? Colors.black
+            : Theme.of(context).colorScheme.primary,
+        title: GestureDetector(
+          onLongPress: () => showAllBLEDevices.value = !showAllBLEDevices.value,
+          child: const Text("Door Opener"),
         ),
-        body: buildShowAll(context)
-        //buildShowAll(context)
-        );
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.brightness_6),
+            onPressed: () {
+              widget.toggleDarkMode();
+            },
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.orange,
+            ),
+            onPressed: () async {
+              addOpenerDialog(context);
+            },
+            child: const Text("Add Opener"),
+          ),
+        ],
+      ),
+      body: buildShowAll(context),
+    );
   }
 
   void sureYouWantToRemoveDialog(BuildContext context, BleDoor bleDoor) {
@@ -839,7 +871,7 @@ class _BodyViewState extends State<BodyView> {
               },
               style: TextButton.styleFrom(
                 foregroundColor: Colors.white,
-                backgroundColor: Colors.red, // text color
+                backgroundColor: Colors.red,
               ),
               child: const Text('Yes'),
             ),
@@ -849,7 +881,7 @@ class _BodyViewState extends State<BodyView> {
               },
               style: TextButton.styleFrom(
                 foregroundColor: Colors.white,
-                backgroundColor: Colors.green, // text color
+                backgroundColor: Colors.green,
               ),
               child: const Text('No'),
             ),
@@ -871,45 +903,45 @@ class ColorPicker extends StatelessWidget {
       valueListenable: color,
       builder: (context, color, child) {
         return SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: [
-                for (var c in [
-                  Colors.red,
-                  Colors.green,
-                  Colors.blue,
-                  Colors.yellow,
-                  Colors.purple,
-                  Colors.orange,
-                  Colors.pink,
-                  Colors.teal,
-                  Colors.brown,
-                  Colors.grey,
-                  Colors.black,
-                  Colors.white,
-                ])
-                  GestureDetector(
-                    onTap: () {
-                      this.color.value = c;
-                    },
-                    child: Container(
-                      width: 30,
-                      height: 30,
-                      decoration: BoxDecoration(
-                        color: c,
-                        border: Border.all(
-                          // Add a border if the color is the selected color
-                          color: this.color.value == c
-                              ? Colors.black
-                              : Colors.transparent,
-                          width: 2,
-                        ),
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            children: [
+              for (var c in [
+                Colors.red,
+                Colors.green,
+                Colors.blue,
+                Colors.yellow,
+                Colors.purple,
+                Colors.orange,
+                Colors.pink,
+                Colors.teal,
+                Colors.brown,
+                Colors.grey,
+                Colors.black,
+                Colors.white,
+              ])
+                GestureDetector(
+                  onTap: () {
+                    this.color.value = c;
+                  },
+                  child: Container(
+                    width: 30,
+                    height: 30,
+                    decoration: BoxDecoration(
+                      color: c,
+                      border: Border.all(
+                        color: this.color.value == c
+                            ? Colors.black
+                            : Colors.transparent,
+                        width: 2,
                       ),
-                      margin: const EdgeInsets.all(5),
                     ),
+                    margin: const EdgeInsets.all(5),
                   ),
-              ],
-            ));
+                ),
+            ],
+          ),
+        );
       },
     );
   }
