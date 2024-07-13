@@ -7,15 +7,21 @@ on:
     branches: [ "master" ]
 
 jobs:
-  buildAndroid:
+  build:
     runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+
     steps:
       - name: Set up job
         run: |
           TAG_NAME=$(date +'%Y%m%d%H%M%S')
           echo "TAG_NAME=${TAG_NAME}" >> $GITHUB_ENV
 
-      - name: Create Release
+      - name: Create Release (if ubuntu-latest)
+        if: matrix.os == 'ubuntu-latest'
         id: create_release
         uses: actions/create-release@v1
         env:
@@ -40,28 +46,33 @@ jobs:
           #flutter-version-file: pubspec.yaml # path to pubspec.yaml
 
       - run: flutter pub get
-      #- run: flutter test
-      - run: flutter build apk
-      - run: flutter build appbundle
 
-      - name: Print outputs
-        shell: bash
+      - name: Build APK (if ubuntu-latest)
+        if: matrix.os == 'ubuntu-latest'
         run: |
-          echo CACHE-PATH=${{ steps.flutter-action.outputs.CACHE-PATH }}
-          echo CACHE-KEY=${{ steps.flutter-action.outputs.CACHE-KEY }}
-          echo CHANNEL=${{ steps.flutter-action.outputs.CHANNEL }}
-          echo VERSION=${{ steps.flutter-action.outputs.VERSION }}
-          echo ARCHITECTURE=${{ steps.flutter-action.outputs.ARCHITECTURE }}
-          echo PUB-CACHE-PATH=${{ steps.flutter-action.outputs.PUB-CACHE-PATH }}
-          echo PUB-CACHE-KEY=${{ steps.flutter-action.outputs.PUB-CACHE-KEY }}
+          flutter build apk
+          flutter build appbundle
 
-      - name: Upload APK
+      - name: Build iOS (if macos-latest)
+        if: matrix.os == 'macos-latest'
+        run: flutter build ios --release --no-codesign
+
+      - name: Upload APK (if ubuntu-latest)
+        if: matrix.os == 'ubuntu-latest'
         uses: actions/upload-artifact@v4
         with:
           name: release-apk
           path: build/app/outputs/flutter-apk/app-release.apk
 
-      - name: Publish APK
+      - name: Upload iOS APP (if macos-latest)
+        if: matrix.os == 'macos-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-app
+          path: build/ios/iphoneos/Runner.app
+
+      - name: Publish APK (if ubuntu-latest)
+        if: matrix.os == 'ubuntu-latest'
         uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -71,60 +82,8 @@ jobs:
           asset_name: app-release.apk
           asset_content_type: application/vnd.android.package-archive
 
-  buildIos:
-    runs-on: macos-latest
-    steps:
-      - name: Set up job
-        run: |
-          TAG_NAME=$(date +'%Y%m%d%H%M%S')
-          echo "TAG_NAME=${TAG_NAME}" >> $GITHUB_ENV
-
-      - name: Create Release
-        id: create_release
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag_name: ${{ env.TAG_NAME }}
-          release_name: Release ${{ env.TAG_NAME }}
-          draft: false
-          prerelease: false
-
-      - name: Clone repository
-        uses: actions/checkout@v4
-
-      - name: Set up Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          channel: stable
-          cache-key: "flutter-:os:-:channel:-:version:-:arch:-:hash:" # optional, change this to force refresh cache
-          cache-path: "${{ runner.tool_cache }}/flutter/:channel:-:version:-:arch:" # optional, change this to specify the cache path
-          pub-cache-key: "flutter-pub:os:-:channel:-:version:-:arch:-:hash:" # optional, change this to force refresh cache of dart pub get dependencies
-          pub-cache-path: "${{ runner.tool_cache }}/flutter/:channel:-:version:-:arch:" # optional, change this to specify the cache path
-          #flutter-version-file: pubspec.yaml # path to pubspec.yaml
-
-      - run: flutter pub get
-      #- run: flutter test
-      - run: flutter build ios --release --no-codesign
-
-      - name: Print outputs
-        shell: bash
-        run: |
-          echo CACHE-PATH=${{ steps.flutter-action.outputs.CACHE-PATH }}
-          echo CACHE-KEY=${{ steps.flutter-action.outputs.CACHE-KEY }}
-          echo CHANNEL=${{ steps.flutter-action.outputs.CHANNEL }}
-          echo VERSION=${{ steps.flutter-action.outputs.VERSION }}
-          echo ARCHITECTURE=${{ steps.flutter-action.outputs.ARCHITECTURE }}
-          echo PUB-CACHE-PATH=${{ steps.flutter-action.outputs.PUB-CACHE-PATH }}
-          echo PUB-CACHE-KEY=${{ steps.flutter-action.outputs.PUB-CACHE-KEY }}
-
-      - name: Upload IOS-APP
-        uses: actions/upload-artifact@v4
-        with:
-          name: release-app
-          path: build/ios/iphoneos/Runner.app
-
-      - name: Publish IOS-APP
+      - name: Publish iOS APP (if macos-latest)
+        if: matrix.os == 'macos-latest'
         uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
