@@ -67,7 +67,7 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: app-release.apk
+          name: andorid-Ble_Doorlock_Opener.apk
           path: build/app/outputs/flutter-apk/app-release.apk
 
       - name: Publish APK
@@ -77,7 +77,7 @@ jobs:
         with:
           upload_url: ${{ env.RELEASE_UPLOAD_URL }}
           asset_path: build/app/outputs/flutter-apk/app-release.apk
-          asset_name: Android-release.apk
+          asset_name: Android-Ble_Doorlock_Opener.apk
           asset_content_type: application/vnd.android.package-archive
 
   buildIos:
@@ -121,7 +121,7 @@ jobs:
       - name: Upload IOS-APP
         uses: actions/upload-artifact@v4
         with:
-          name: release-app.zip
+          name: IOS-Runner-Ble_Doorlock_Opener.zip
           path: build/ios/iphoneos/Runner.zip
 
       - name: Publish IOS-APP
@@ -131,6 +131,21 @@ jobs:
         with:
           upload_url: ${{ env.RELEASE_UPLOAD_URL }}
           asset_path: build/ios/iphoneos/Runner.zip
-          asset_name: IOS-release.zip
+          asset_name: IOS-Runner-Ble_Doorlock_Opener.zip
           asset_content_type: application/zip
-      #- run: flutter build ipa
+      - run: flutter build ipa
+      - name: Upload IOS-APP
+        uses: actions/upload-artifact@v4
+        with:
+          name: IOS-App-Ble_Doorlock_Opener-app.ipa
+          path: build/ios/ipa/ble_doorlock_opener.ipa
+
+      - name: Publish IOS-APP
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ env.RELEASE_UPLOAD_URL }}
+          asset_path: build/ios/ipa/ble_doorlock_opener.ipa
+          asset_name: IOS-App-Ble_Doorlock_Opener-app.ipa
+          asset_content_type: application/zip
