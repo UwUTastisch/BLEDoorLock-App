@@ -12,7 +12,8 @@ jobs:
     steps:
       - name: Set up job
         run: |
-          echo "TAG_NAME=$(date +'%Y%m%d%H%M%S')" >> $GITHUB_ENV
+          TAG_NAME=$(date +'%Y%m%d%H%M%S')
+          echo "TAG_NAME=${TAG_NAME}" >> $GITHUB_ENV
 
       - name: Create Release
         id: create_release
@@ -75,7 +76,8 @@ jobs:
     steps:
       - name: Set up job
         run: |
-          echo "TAG_NAME=$(date +'%Y%m%d%H%M%S')" >> $GITHUB_ENV
+          TAG_NAME=$(date +'%Y%m%d%H%M%S')
+          echo "TAG_NAME=${TAG_NAME}" >> $GITHUB_ENV
 
       - name: Create Release
         id: create_release
