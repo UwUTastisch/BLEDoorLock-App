@@ -40,6 +40,11 @@ jobs:
           echo ARCHITECTURE=${{ steps.flutter-action.outputs.ARCHITECTURE }}
           echo PUB-CACHE-PATH=${{ steps.flutter-action.outputs.PUB-CACHE-PATH }}
           echo PUB-CACHE-KEY=${{ steps.flutter-action.outputs.PUB-CACHE-KEY }}
+      - name: Upload APK
+        uses: actions/upload-artifact@v2
+        with:
+          name: release-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
   buidlIos:
     runs-on: macos-latest
     steps:
@@ -67,3 +72,8 @@ jobs:
           echo ARCHITECTURE=${{ steps.flutter-action.outputs.ARCHITECTURE }}
           echo PUB-CACHE-PATH=${{ steps.flutter-action.outputs.PUB-CACHE-PATH }}
           echo PUB-CACHE-KEY=${{ steps.flutter-action.outputs.PUB-CACHE-KEY }}
+      - name: Upload IOS-APP
+        uses: actions/upload-artifact@v2
+        with:
+          name: release-app
+          path: build/ios/iphoneos/Runner.app
