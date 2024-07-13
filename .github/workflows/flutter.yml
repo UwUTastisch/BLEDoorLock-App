@@ -103,7 +103,6 @@ jobs:
 
       - run: flutter pub get
       - run: flutter build ios --release --no-codesign
-      - run: flutter build ipa
 
       - name: Print outputs
         shell: bash
@@ -134,3 +133,4 @@ jobs:
           asset_path: build/ios/iphoneos/Runner.zip
           asset_name: IOS-release.zip
           asset_content_type: application/zip
+      #- run: flutter build ipa
