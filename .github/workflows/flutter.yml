@@ -43,7 +43,6 @@ jobs:
           cache-path: "${{ runner.tool_cache }}/flutter/:channel:-:version:-:arch:" # optional, change this to specify the cache path
           pub-cache-key: "flutter-pub:os:-:channel:-:version:-:arch:-:hash:" # optional, change this to force refresh cache of dart pub get dependencies
           pub-cache-path: "${{ runner.tool_cache }}/flutter/:channel:-:version:-:arch:" # optional, change this to specify the cache path
-          #flutter-version-file: pubspec.yaml # path to pubspec.yaml
 
       - run: flutter pub get
       - run: flutter build apk
@@ -82,12 +81,7 @@ jobs:
 
   buildIos:
     runs-on: macos-latest
-    needs: createRelease
     steps:
-      - name: Set up job
-        run: |
-          echo "RELEASE_UPLOAD_URL=${{ needs.createRelease.outputs.release_upload_url }}" >> $GITHUB_ENV
-
       - name: Clone repository
         uses: actions/checkout@v4
 
@@ -99,21 +93,9 @@ jobs:
           cache-path: "${{ runner.tool_cache }}/flutter/:channel:-:version:-:arch:" # optional, change this to specify the cache path
           pub-cache-key: "flutter-pub:os:-:channel:-:version:-:arch:-:hash:" # optional, change this to force refresh cache of dart pub get dependencies
           pub-cache-path: "${{ runner.tool_cache }}/flutter/:channel:-:version:-:arch:" # optional, change this to specify the cache path
-          #flutter-version-file: pubspec.yaml # path to pubspec.yaml
 
       - run: flutter pub get
       - run: flutter build ios --release --no-codesign
-
-      - name: Print outputs
-        shell: bash
-        run: |
-          echo CACHE-PATH=${{ steps.flutter-action.outputs.CACHE-PATH }}
-          echo CACHE-KEY=${{ steps.flutter-action.outputs.CACHE-KEY }}
-          echo CHANNEL=${{ steps.flutter-action.outputs.CHANNEL }}
-          echo VERSION=${{ steps.flutter-action.outputs.VERSION }}
-          echo ARCHITECTURE=${{ steps.flutter-action.outputs.ARCHITECTURE }}
-          echo PUB-CACHE-PATH=${{ steps.flutter-action.outputs.PUB-CACHE-PATH }}
-          echo PUB-CACHE-KEY=${{ steps.flutter-action.outputs.PUB-CACHE-KEY }}
 
       - name: Zip IOS App
         run: zip -r build/ios/iphoneos/Runner.zip build/ios/iphoneos/Runner.app
@@ -124,7 +106,30 @@ jobs:
           name: IOS-Runner-Ble_Doorlock_Opener.zip
           path: build/ios/iphoneos/Runner.zip
 
-      - name: Publish IOS-APP
+      - name: Build IPA
+        run: flutter build ipa
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: IOS-App-Ble_Doorlock_Opener-app.ipa
+          path: build/ios/ipa/ble_doorlock_opener.ipa
+
+  publishIOS:
+    runs-on: macos-latest
+    needs: [buildIos, createRelease]
+    steps:
+      - name: Set up job
+        run: |
+          echo "RELEASE_UPLOAD_URL=${{ needs.createRelease.outputs.release_upload_url }}" >> $GITHUB_ENV
+
+      - name: Download IOS App Zip
+        uses: actions/download-artifact@v4
+        with:
+          name: IOS-Runner-Ble_Doorlock_Opener.zip
+          path: build/ios/iphoneos/
+
+      - name: Publish IOS App Zip
         uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -133,15 +138,14 @@ jobs:
           asset_path: build/ios/iphoneos/Runner.zip
           asset_name: IOS-Runner-Ble_Doorlock_Opener.zip
           asset_content_type: application/zip
-      - run: flutter build ipa
-      - name: Upload IOS-APP
-        uses: actions/upload-artifact@v4
+
+      - name: Download IPA
+        uses: actions/download-artifact@v4
         with:
           name: IOS-App-Ble_Doorlock_Opener-app.ipa
-          path: build/ios/ipa/ble_doorlock_opener.ipa
+          path: build/ios/ipa/
 
-      - name: Publish IOS-APP
-        if: github.ref == 'refs/heads/master'
+      - name: Publish IPA
         uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
