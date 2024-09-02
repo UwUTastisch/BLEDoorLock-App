@@ -2,12 +2,13 @@ name: Flutter
 
 on:
   push:
-    branches: [ "master" ]
+    branches: [ "master", "development" ]
   pull_request:
     branches: [ "master" ]
 
 jobs:
   createRelease:
+    if: github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
     outputs:
       release_upload_url: ${{ steps.create_release.outputs.upload_url }}
@@ -71,6 +72,7 @@ jobs:
           path: build/app/outputs/flutter-apk/app-release.apk
 
       - name: Publish APK
+        if: github.ref == 'refs/heads/master'
         uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -141,6 +143,7 @@ jobs:
           path: build/ios/ipa/ble_doorlock_opener.ipa
 
       - name: Publish IOS-APP
+        if: github.ref == 'refs/heads/master'
         uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
