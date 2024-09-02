@@ -30,7 +30,6 @@ jobs:
           prerelease: false
 
   buildAndroid:
-    if: github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
     steps:
       - name: Clone repository
@@ -72,7 +71,6 @@ jobs:
           path: build/app/outputs/flutter-apk/
 
       - name: Publish APK
-        if: github.ref == 'refs/heads/master'
         uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
