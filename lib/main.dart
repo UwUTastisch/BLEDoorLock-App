@@ -140,6 +140,9 @@ class _BodyViewState extends State<BodyView> {
     stateChangedSubscription =
         centralManager.stateChanged.listen((eventArgs) async {
       final state = eventArgs.state;
+      if (kDebugMode) {
+        print("Bluetooth state changed: $state");
+      }
       if (Platform.isAndroid && state == BluetoothLowEnergyState.unauthorized) {
         await centralManager.authorize();
       }
