@@ -130,13 +130,34 @@ jobs:
       - name: Zip IOS App
         run: zip -r build/ios/iphoneos/Runner.zip build/ios/iphoneos/Runner.app
 
-      - name: Upload IOS-APP
+      - name: Upload IOS-ZIP
         uses: actions/upload-artifact@v4
         with:
           name: IOS-Runner-Ble_Doorlock_Opener.zip
           path: build/ios/iphoneos/Runner.zip
 
-      - name: Publish IOS-APP
+      - run: flutter build ipa
+      - name: Upload IOS-IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: IOS-App-Ble_Doorlock_Opener-app.ipa
+          path: build/ios/ipa/ble_doorlock_opener.ipa
+
+  publishIOS:
+    runs-on: macos-latest
+    needs: [buildIos, createRelease]
+    steps:
+      - name: Set up job
+        run: |
+          echo "RELEASE_UPLOAD_URL=${{ needs.createRelease.outputs.release_upload_url }}" >> $GITHUB_ENV
+
+      - name: Download IOS App Zip
+        uses: actions/download-artifact@v4
+        with:
+          name: IOS-Runner-Ble_Doorlock_Opener.zip
+          path: build/ios/iphoneos/
+
+      - name: Publish IOS App Zip
         uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -145,9 +166,19 @@ jobs:
           asset_path: build/ios/iphoneos/Runner.zip
           asset_name: IOS-Runner-Ble_Doorlock_Opener.zip
           asset_content_type: application/zip
-      - run: flutter build ipa
-      - name: Upload IOS-APP
-        uses: actions/upload-artifact@v4
+
+      - name: Download IPA
+        uses: actions/download-artifact@v4
         with:
           name: IOS-App-Ble_Doorlock_Opener-app.ipa
-          path: build/ios/ipa/ble_doorlock_opener.ipa
+          path: build/ios/ipa/
+
+      - name: Publish IPA
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ env.RELEASE_UPLOAD_URL }}
+          asset_path: build/ios/ipa/ble_doorlock_opener.ipa
+          asset_name: IOS-App-Ble_Doorlock_Opener-app.ipa
+          asset_content_type: application/zip
