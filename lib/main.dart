@@ -149,7 +149,7 @@ class _BodyViewState extends State<BodyView> {
       this.state.value = state;
     });
     discoveredSubscription = centralManager.discovered.listen(
-      (eventArgs) {
+      (eventArgs) async {
         final items = discoveredEventArgs.value;
         final i = items.indexWhere(
           (item) => item.peripheral == eventArgs.peripheral,
@@ -160,7 +160,11 @@ class _BodyViewState extends State<BodyView> {
           items[i] = eventArgs;
           discoveredEventArgs.value = [...items];
         }
+        if (Platform.isAndroid && state == BluetoothLowEnergyState.unauthorized) {
+          await centralManager.authorize();
+        }
       },
+
     );
     bleDoors = ValueNotifier([]);
     _initialize();
@@ -248,6 +252,12 @@ class _BodyViewState extends State<BodyView> {
     return widgets;
   }
 
+  Map<BleDoor, Future<void>?> statesController = {};
+
+  bool isConnectingAndOpening(BleDoor bleDoor) {
+    return statesController[bleDoor] != null;
+  }
+
   Widget bleDoorWidget(BuildContext context, BleDoor bleDoor,
       {bool isInteractable = true}) {
     final String key = BleDoor(
@@ -261,6 +271,31 @@ class _BodyViewState extends State<BodyView> {
         .toString();
     expansionState.putIfAbsent(key, () => false);
     bool isExpanded = expansionState[key]!;
+
+    bool isConnectingAndOpening() {
+      return this.isConnectingAndOpening(bleDoor);
+    }
+
+    Future<void> connectAndOpenBleDoor() async {
+      if (isConnectingAndOpening()) {
+        return;
+      }
+      Duration timeout = const Duration(seconds: 10);
+
+      Future<void> f = this
+          .connectAndOpenBleDoor(context, bleDoor)
+          .timeout(timeout, onTimeout: () {
+        errorDialog(context, "Timeout while connecting to ${bleDoor.lockName}");
+        statesController[bleDoor] = null;
+      }).catchError((error) {
+        errorDialog(context, error);
+        statesController[bleDoor] = null;
+      }).then((value) {
+        statesController[bleDoor] = null;
+      });
+      statesController[bleDoor] = f;
+      await f;
+    }
 
     return GestureDetector(
       onLongPress: (isInteractable)
@@ -300,9 +335,13 @@ class _BodyViewState extends State<BodyView> {
                         : Colors.grey,
                     foregroundColor: Colors.white,
                   ),
-                  onPressed: (isInteractable)
+                  onPressed: (isInteractable && !isConnectingAndOpening())
                       ? () {
-                          connectAndOpenBleDoor(context, bleDoor);
+                          if (kDebugMode) {
+                            print(
+                                "Opening door ${bleDoor.lockName}, $isInteractable and ${!isConnectingAndOpening()}");
+                          }
+                          connectAndOpenBleDoor();
                         }
                       : null,
                   child: const Text("Open"),
@@ -582,7 +621,23 @@ class _BodyViewState extends State<BodyView> {
           .first
           .peripheral;
       await centralManager.connect(peripheral);
+
+      await centralManager.authorize();
       var discoverGATT = await centralManager.discoverGATT(peripheral);
+      /*
+      print("is android: ${Platform.isAndroid}");
+      print(
+          "is state unauthorized: ${state.value == BluetoothLowEnergyState.unauthorized}");
+      while (!(Platform.isAndroid &&
+          state == BluetoothLowEnergyState.unauthorized)) {
+        if (!isConnectingAndOpening(bleDoor)) return;
+        print("is android: ${Platform.isAndroid}");
+        print(
+            "is state unauthorized: ${state.value == BluetoothLowEnergyState.unauthorized}");
+        print("Authorize BLE-Connections");
+        await centralManager.authorize();
+        state.value = centralManager.state;
+      }*/
 
       await centralManager.writeCharacteristic(
           peripheral,
@@ -844,7 +899,8 @@ class _BodyViewState extends State<BodyView> {
           onLongPress: () => showAllBLEDevices.value = !showAllBLEDevices.value,
           child: Row(children: [
             const Text("Door Opener "),
-            Text("v${packageInfo.version}", style: const TextStyle(fontSize: 10))
+            Text("v${packageInfo.version}",
+                style: const TextStyle(fontSize: 10))
           ]),
         ),
         actions: [
