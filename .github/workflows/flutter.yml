@@ -49,7 +49,7 @@ jobs:
         with:
           distribution: 'temurin'
           java-version: '17'
-          kotlin-version: '1.8.0'
+          kotlin-version: '1.6.0'
       - name: Set up Flutter
         if: github.ref == 'refs/heads/master'
         uses: subosito/flutter-action@v2
