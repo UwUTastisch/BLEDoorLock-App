@@ -39,8 +39,8 @@ jobs:
           echo "${{ secrets.KEYSTORE_BASE64 }}" >> ${{ runner.temp }}/keystore_base64
           echo "SHA256 of base64 keystore -> $(sha256sum ${{ runner.temp }}/keystore_base64)"  
           base64 -d ${{ runner.temp }}/keystore_base64 >> ${{ runner.temp }}/release-key.jks
+          echo "SHA256 of $storeFile -> $(sha256sum ${{ runner.temp }}/release-key.jks)"
           echo "storeFile=${{ runner.temp }}/release-key.jks" >> android/key.properties
-          echo "SHA256 of storeFile -> $(sha256sum $storeFile)"
           echo "storePassword=${{ secrets.STORE_PASSWORD }}" >> android/key.properties
           echo "keyPassword=${{ secrets.KEY_PASSWORD }}" >> android/key.properties
           echo "keyAlias=${{ secrets.KEY_ALIAS }}" >> android/key.properties
