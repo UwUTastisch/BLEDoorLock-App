@@ -37,7 +37,7 @@ jobs:
       - name: Create key.properties
         run: | 
           echo "${{ secrets.KEYSTORE_BASE64 }}" > ${{ runner.temp }}/keystore_base64
-          echo "SHA256 of base64 keystore -> $(sha256sum ${{ runner.temp }}/key_base64)"  
+          echo "SHA256 of base64 keystore -> $(sha256sum ${{ runner.temp }}/keystore_base64)"  
           base64 -d ${{ runner.temp }}/keystore_base64 > ${{ runner.temp }}/release-key.jks
           echo "storeFile=${{ runner.temp }}/release-key.jks" > android/key.properties
           echo "SHA256 of storeFile -> $(sha256sum $storeFile)"
