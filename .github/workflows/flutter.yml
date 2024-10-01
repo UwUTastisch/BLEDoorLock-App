@@ -44,12 +44,12 @@ jobs:
           echo "storePassword=${{ secrets.STORE_PASSWORD }}" >> android/key.properties
           echo "keyPassword=${{ secrets.KEY_PASSWORD }}" >> android/key.properties
           echo "keyAlias=${{ secrets.KEY_ALIAS }}" >> android/key.properties
-      - name: Set up JDK 17
+      - name: Set up JDK 17 and Kotlin
         uses: actions/setup-java@v3
         with:
-          distribution: 'temurin' # Optional, defaults to 'adopt'
+          distribution: 'temurin'
           java-version: '17'
-
+          kotlin-version: '1.8.0'
       - name: Set up Flutter
         if: github.ref == 'refs/heads/master'
         uses: subosito/flutter-action@v2
