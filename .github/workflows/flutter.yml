@@ -2,12 +2,13 @@ name: Flutter
 
 on:
   push:
-    branches: [ "master" ]
+    branches: [ "master", "development" ]
   pull_request:
     branches: [ "master" ]
 
 jobs:
   createRelease:
+    if: github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
     outputs:
       release_upload_url: ${{ steps.create_release.outputs.upload_url }}
@@ -30,16 +31,25 @@ jobs:
 
   buildAndroid:
     runs-on: ubuntu-latest
-    needs: createRelease
     steps:
-      - name: Set up job
-        run: |
-          echo "RELEASE_UPLOAD_URL=${{ needs.createRelease.outputs.release_upload_url }}" >> $GITHUB_ENV
-
       - name: Clone repository
         uses: actions/checkout@v4
-
+      - name: Create key.properties
+        run: | 
+          echo "${{ secrets.KEYSTORE_BASE64 }}" >> ${{ runner.temp }}/keystore_base64
+          echo "SHA256 of base64 keystore -> $(sha256sum ${{ runner.temp }}/keystore_base64)"  
+          base64 -d ${{ runner.temp }}/keystore_base64 >> ${{ runner.temp }}/release-key.jks
+          echo "SHA256 of $storeFile -> $(sha256sum ${{ runner.temp }}/release-key.jks)"
+          echo "storeFile=${{ runner.temp }}/release-key.jks" >> android/key.properties
+          echo "storePassword=${{ secrets.STORE_PASSWORD }}" >> android/key.properties
+          echo "keyPassword=${{ secrets.KEY_PASSWORD }}" >> android/key.properties
+          echo "keyAlias=${{ secrets.KEY_ALIAS }}" >> android/key.properties
+      - uses: actions/setup-java@v3
+        with:
+          distribution: 'zulu'
+          java-version: "17"
       - name: Set up Flutter
+        if: github.ref == 'refs/heads/master'
         uses: subosito/flutter-action@v2
         with:
           channel: stable
@@ -48,10 +58,16 @@ jobs:
           pub-cache-key: "flutter-pub:os:-:channel:-:version:-:arch:-:hash:" # optional, change this to force refresh cache of dart pub get dependencies
           pub-cache-path: "${{ runner.tool_cache }}/flutter/:channel:-:version:-:arch:" # optional, change this to specify the cache path
           #flutter-version-file: pubspec.yaml # path to pubspec.yaml
-
+      - name: Set up Flutter
+        if: github.ref != 'refs/heads/master'
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: "3.22.1"
+      - run: flutter doctor -v
       - run: flutter pub get
-      - run: flutter build apk
-      - run: flutter build appbundle
+      - run: flutter build apk --flavor prod 
+      - run: flutter build appbundle --flavor prod
 
       - name: Print outputs
         shell: bash
@@ -68,7 +84,22 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: andorid-Ble_Doorlock_Opener.apk
-          path: build/app/outputs/flutter-apk/app-release.apk
+          path: build/app/outputs/flutter-apk/app-prod-release.apk
+
+
+  publishAPK:
+    runs-on: ubuntu-latest
+    needs: [buildAndroid, createRelease]
+    steps:
+      - name: Set up job
+        run: |
+          echo "RELEASE_UPLOAD_URL=${{ needs.createRelease.outputs.release_upload_url }}" >> $GITHUB_ENV
+
+      - name: Download APK
+        uses: actions/download-artifact@v4
+        with:
+          name: andorid-Ble_Doorlock_Opener.apk
+          path: build/app/outputs/flutter-apk/
 
       - name: Publish APK
         uses: actions/upload-release-asset@v1
@@ -82,12 +113,7 @@ jobs:
 
   buildIos:
     runs-on: macos-latest
-    needs: createRelease
     steps:
-      - name: Set up job
-        run: |
-          echo "RELEASE_UPLOAD_URL=${{ needs.createRelease.outputs.release_upload_url }}" >> $GITHUB_ENV
-
       - name: Clone repository
         uses: actions/checkout@v4
 
@@ -118,13 +144,34 @@ jobs:
       - name: Zip IOS App
         run: zip -r build/ios/iphoneos/Runner.zip build/ios/iphoneos/Runner.app
 
-      - name: Upload IOS-APP
+      - name: Upload IOS-ZIP
         uses: actions/upload-artifact@v4
         with:
           name: IOS-Runner-Ble_Doorlock_Opener.zip
           path: build/ios/iphoneos/Runner.zip
 
-      - name: Publish IOS-APP
+      - run: flutter build ipa
+      - name: Upload IOS-IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: IOS-App-Ble_Doorlock_Opener-app.ipa
+          path: build/ios/ipa/ble_doorlock_opener.ipa
+
+  publishIOS:
+    runs-on: macos-latest
+    needs: [buildIos, createRelease]
+    steps:
+      - name: Set up job
+        run: |
+          echo "RELEASE_UPLOAD_URL=${{ needs.createRelease.outputs.release_upload_url }}" >> $GITHUB_ENV
+
+      - name: Download IOS App Zip
+        uses: actions/download-artifact@v4
+        with:
+          name: IOS-Runner-Ble_Doorlock_Opener.zip
+          path: build/ios/iphoneos/
+
+      - name: Publish IOS App Zip
         uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -133,14 +180,14 @@ jobs:
           asset_path: build/ios/iphoneos/Runner.zip
           asset_name: IOS-Runner-Ble_Doorlock_Opener.zip
           asset_content_type: application/zip
-      - run: flutter build ipa
-      - name: Upload IOS-APP
-        uses: actions/upload-artifact@v4
+
+      - name: Download IPA
+        uses: actions/download-artifact@v4
         with:
           name: IOS-App-Ble_Doorlock_Opener-app.ipa
-          path: build/ios/ipa/ble_doorlock_opener.ipa
+          path: build/ios/ipa/
 
-      - name: Publish IOS-APP
+      - name: Publish IPA
         uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -11,9 +11,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:qr_code_dart_scan/qr_code_dart_scan.dart';
 import 'package:qr_flutter/qr_flutter.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
 import 'custom-theme.dart';
 import 'models/ble-door.dart';
+import 'package:logging/logging.dart';
 
 bool get enablePeripheral => !Platform.isLinux && !Platform.isWindows;
 
@@ -39,6 +41,10 @@ final uuidAddPassCharacteristic =
 final uuidAdminActionCharacteristic =
     UUID.fromString("b1d86fdf-7d5d-49b7-8da7-b02bd53bdb0a");
 
+late final PackageInfo packageInfo;
+
+late final CentralManager centralManager;
+
 void main() {
   runZonedGuarded(onStartUp, onCrashed);
 }
@@ -48,11 +54,8 @@ void onStartUp() async {
   // hierarchicalLoggingEnabled = true;
   // CentralManager.instance.logLevel = Level.WARNING;
   WidgetsFlutterBinding.ensureInitialized();
-  await CentralManager.instance.setUp();
-  if (enablePeripheral) {
-    await PeripheralManager.instance.setUp();
-  }
-
+  centralManager = CentralManager();
+  packageInfo = await PackageInfo.fromPlatform();
   runApp(const MyApp());
 }
 
@@ -73,8 +76,6 @@ void onLogRecord(LogRecord record) {
   );
 }
 
-// Show widgets
-
 class MyApp extends StatefulWidget {
   const MyApp({super.key});
 
@@ -83,13 +84,14 @@ class MyApp extends StatefulWidget {
 }
 
 class _MyAppState extends State<MyApp> {
-  bool isDarkMode = false;
+  bool isDarkMode = true;
 
   @override
   void initState() {
     super.initState();
     // Detect the current system brightness and set the theme accordingly
-    final Brightness brightness = MediaQuery.of(context).platformBrightness;
+    final Brightness brightness =
+        WidgetsBinding.instance!.window.platformBrightness;
     isDarkMode = brightness == Brightness.dark;
   }
 
@@ -135,13 +137,19 @@ class _BodyViewState extends State<BodyView> {
     state = ValueNotifier(BluetoothLowEnergyState.unknown);
     discovering = ValueNotifier(false);
     discoveredEventArgs = ValueNotifier([]);
-    stateChangedSubscription = CentralManager.instance.stateChanged.listen(
-      (eventArgs) {
-        state.value = eventArgs.state;
-      },
-    );
-    discoveredSubscription = CentralManager.instance.discovered.listen(
-      (eventArgs) {
+    stateChangedSubscription =
+        centralManager.stateChanged.listen((eventArgs) async {
+      final state = eventArgs.state;
+      if (kDebugMode) {
+        print("Bluetooth state changed: $state");
+      }
+      if (Platform.isAndroid && state == BluetoothLowEnergyState.unauthorized) {
+        await centralManager.authorize();
+      }
+      this.state.value = state;
+    });
+    discoveredSubscription = centralManager.discovered.listen(
+      (eventArgs) async {
         final items = discoveredEventArgs.value;
         final i = items.indexWhere(
           (item) => item.peripheral == eventArgs.peripheral,
@@ -152,14 +160,18 @@ class _BodyViewState extends State<BodyView> {
           items[i] = eventArgs;
           discoveredEventArgs.value = [...items];
         }
+        if (Platform.isAndroid && state == BluetoothLowEnergyState.unauthorized) {
+          await centralManager.authorize();
+        }
       },
+
     );
     bleDoors = ValueNotifier([]);
     _initialize();
   }
 
   void _initialize() async {
-    state.value = await CentralManager.instance.getState();
+    state.value = centralManager.state;
     List<BleDoor> loadedBleDoors = await BleDoorStorage.loadBleDoors();
     bleDoors.value = loadedBleDoors;
 
@@ -168,12 +180,12 @@ class _BodyViewState extends State<BodyView> {
 
   Future<void> startDiscovery() async {
     discoveredEventArgs.value = [];
-    await CentralManager.instance.startDiscovery();
+    await centralManager.startDiscovery();
     discovering.value = true;
   }
 
   Future<void> stopDiscovery() async {
-    await CentralManager.instance.stopDiscovery();
+    await centralManager.stopDiscovery();
     discovering.value = false;
   }
 
@@ -183,14 +195,14 @@ class _BodyViewState extends State<BodyView> {
       builder: (context, showble, child) => ValueListenableBuilder(
         valueListenable: discoveredEventArgs,
         builder: (context, eventargs, child) {
+          List<Widget> availableBLEDevices =
+              bleListeningWidgets(context, discoveredEventArgs.value);
           List<Widget> widgets = [
-            for (var bleDoor in bleDoors.value) bleDoorWidget(context, bleDoor)
+            for (var bleDoor in bleDoors.value) bleDoorWidget(context, bleDoor),
+            if (showble)
+              Text("BLE-Devices in reach: ${availableBLEDevices.length}"),
+            if (showble) ...availableBLEDevices,
           ];
-          if (showble) {
-            widgets.addAll(
-                bleListeningWidgets(context, discoveredEventArgs.value));
-          }
-
           return ListView.separated(
               itemBuilder: (BuildContext context, int index) {
                 return widgets[index];
@@ -240,6 +252,12 @@ class _BodyViewState extends State<BodyView> {
     return widgets;
   }
 
+  Map<BleDoor, Future<void>?> statesController = {};
+
+  bool isConnectingAndOpening(BleDoor bleDoor) {
+    return statesController[bleDoor] != null;
+  }
+
   Widget bleDoorWidget(BuildContext context, BleDoor bleDoor,
       {bool isInteractable = true}) {
     final String key = BleDoor(
@@ -253,6 +271,31 @@ class _BodyViewState extends State<BodyView> {
         .toString();
     expansionState.putIfAbsent(key, () => false);
     bool isExpanded = expansionState[key]!;
+
+    bool isConnectingAndOpening() {
+      return this.isConnectingAndOpening(bleDoor);
+    }
+
+    Future<void> connectAndOpenBleDoor() async {
+      if (isConnectingAndOpening()) {
+        return;
+      }
+      Duration timeout = const Duration(seconds: 10);
+
+      Future<void> f = this
+          .connectAndOpenBleDoor(context, bleDoor)
+          .timeout(timeout, onTimeout: () {
+        errorDialog(context, "Timeout while connecting to ${bleDoor.lockName}");
+        statesController[bleDoor] = null;
+      }).catchError((error) {
+        errorDialog(context, error);
+        statesController[bleDoor] = null;
+      }).then((value) {
+        statesController[bleDoor] = null;
+      });
+      statesController[bleDoor] = f;
+      await f;
+    }
 
     return GestureDetector(
       onLongPress: (isInteractable)
@@ -292,9 +335,13 @@ class _BodyViewState extends State<BodyView> {
                         : Colors.grey,
                     foregroundColor: Colors.white,
                   ),
-                  onPressed: (isInteractable)
+                  onPressed: (isInteractable && !isConnectingAndOpening())
                       ? () {
-                          connectAndOpenBleDoor(context, bleDoor);
+                          if (kDebugMode) {
+                            print(
+                                "Opening door ${bleDoor.lockName}, $isInteractable and ${!isConnectingAndOpening()}");
+                          }
+                          connectAndOpenBleDoor();
                         }
                       : null,
                   child: const Text("Open"),
@@ -573,28 +620,47 @@ class _BodyViewState extends State<BodyView> {
           })
           .first
           .peripheral;
-      await CentralManager.instance.connect(peripheral);
-      var discoverGATT = await CentralManager.instance.discoverGATT(peripheral);
+      await centralManager.connect(peripheral);
 
-      await CentralManager.instance.writeCharacteristic(
+      await centralManager.authorize();
+      var discoverGATT = await centralManager.discoverGATT(peripheral);
+      /*
+      print("is android: ${Platform.isAndroid}");
+      print(
+          "is state unauthorized: ${state.value == BluetoothLowEnergyState.unauthorized}");
+      while (!(Platform.isAndroid &&
+          state == BluetoothLowEnergyState.unauthorized)) {
+        if (!isConnectingAndOpening(bleDoor)) return;
+        print("is android: ${Platform.isAndroid}");
+        print(
+            "is state unauthorized: ${state.value == BluetoothLowEnergyState.unauthorized}");
+        print("Authorize BLE-Connections");
+        await centralManager.authorize();
+        state.value = centralManager.state;
+      }*/
+
+      await centralManager.writeCharacteristic(
+          peripheral,
           discoverGATT
               .expand((element) => element.characteristics)
               .firstWhere((element) => element.uuid == uuidUserCharacteristic),
           value: Uint8List.fromList(utf8.encode(bleDoor.userName)),
-          type: GattCharacteristicWriteType.withoutResponse);
+          type: GATTCharacteristicWriteType.withoutResponse);
 
-      await CentralManager.instance.writeCharacteristic(
+      await centralManager.writeCharacteristic(
+          peripheral,
           discoverGATT
               .expand((element) => element.characteristics)
               .firstWhere((element) => element.uuid == uuidPassCharacteristic),
           value: Uint8List.fromList(utf8.encode(bleDoor.password)),
-          type: GattCharacteristicWriteType.withoutResponse);
+          type: GATTCharacteristicWriteType.withoutResponse);
 
-      await CentralManager.instance.writeCharacteristic(
+      await centralManager.writeCharacteristic(
+          peripheral,
           discoverGATT.expand((element) => element.characteristics).firstWhere(
               (element) => element.uuid == uuidLockStateCharacteristic),
           value: Uint8List.fromList(utf8.encode("2")),
-          type: GattCharacteristicWriteType.withoutResponse);
+          type: GATTCharacteristicWriteType.withoutResponse);
     } catch (error) {
       errorDialog(context, error);
       rethrow;
@@ -610,8 +676,8 @@ class _BodyViewState extends State<BodyView> {
           })
           .first
           .peripheral;
-      await CentralManager.instance.connect(peripheral);
-      var discoverGATT = await CentralManager.instance.discoverGATT(peripheral);
+      await centralManager.connect(peripheral);
+      var discoverGATT = await centralManager.discoverGATT(peripheral);
       print(
           "Connected to ${admin.lockName} with UUID ${admin.lockId} and following characteristics: ${discoverGATT.expand((element) => element.characteristics).map((e) => e.uuid).toList()}");
       for (var characteristic
@@ -619,37 +685,42 @@ class _BodyViewState extends State<BodyView> {
         print(
             "Characteristic: ${characteristic.uuid} and ${characteristic.properties}");
       }
-
-      await CentralManager.instance.writeCharacteristic(
+      await centralManager.writeCharacteristic(
+          peripheral,
           discoverGATT
               .expand((element) => element.characteristics)
               .firstWhere((element) => element.uuid == uuidAdminCharacteristic),
           value: Uint8List.fromList(utf8.encode(admin.userName)),
-          type: GattCharacteristicWriteType.withoutResponse);
+          type: GATTCharacteristicWriteType.withoutResponse);
       print("Wrote Admin User");
-      await CentralManager.instance.writeCharacteristic(
+      await centralManager.writeCharacteristic(
+          peripheral,
           discoverGATT.expand((element) => element.characteristics).firstWhere(
               (element) => element.uuid == uuidAdminPassCharacteristic),
           value: Uint8List.fromList(utf8.encode(admin.password)),
-          type: GattCharacteristicWriteType.withoutResponse);
+          type: GATTCharacteristicWriteType.withoutResponse);
       print("Wrote Admin Pass");
-      await CentralManager.instance.writeCharacteristic(
+      await centralManager.writeCharacteristic(
+          peripheral,
           discoverGATT.expand((element) => element.characteristics).firstWhere(
               (element) => element.uuid == uuidAddUserCharacteristic),
           value: Uint8List.fromList(utf8.encode(newUser.userName)),
-          type: GattCharacteristicWriteType.withoutResponse);
+          type: GATTCharacteristicWriteType.withoutResponse);
       print("Wrote New User");
-      await CentralManager.instance.writeCharacteristic(
+      await centralManager.writeCharacteristic(
+          peripheral,
           discoverGATT.expand((element) => element.characteristics).firstWhere(
               (element) => element.uuid == uuidAddPassCharacteristic),
           value: Uint8List.fromList(utf8.encode(newUser.password)),
-          type: GattCharacteristicWriteType.withoutResponse);
+          type: GATTCharacteristicWriteType.withoutResponse);
       print("Wrote New Pass");
-      await CentralManager.instance.writeCharacteristic(
+      await centralManager.writeCharacteristic(
+          peripheral,
           discoverGATT.expand((element) => element.characteristics).firstWhere(
               (element) => element.uuid == uuidAdminActionCharacteristic),
           value: Uint8List.fromList(utf8.encode("1")),
-          type: GattCharacteristicWriteType.withoutResponse);
+          type: GATTCharacteristicWriteType.withoutResponse);
+      print("Wrote Admin Action");
     } catch (error) {
       errorDialog(context, error);
       rethrow;
@@ -747,16 +818,13 @@ class _BodyViewState extends State<BodyView> {
 
   Widget qrCodeScan(TextEditingController controller) {
     var qrCodeDartScanController = QRCodeDartScanController();
-    return Transform.rotate(
-      angle: rightAngle(), // Rotate 90 degrees counter clockwise
-      child: QRCodeDartScanView(
-        typeCamera: TypeCamera.back,
-        controller: qrCodeDartScanController,
-        typeScan: TypeScan.live,
-        onCapture: (Result result) {
-          controller.text = result.text;
-        },
-      ),
+    return QRCodeDartScanView(
+      typeCamera: TypeCamera.back,
+      controller: qrCodeDartScanController,
+      typeScan: TypeScan.live,
+      onCapture: (Result result) {
+        controller.text = result.text;
+      },
     );
   }
 
@@ -829,7 +897,11 @@ class _BodyViewState extends State<BodyView> {
             : Theme.of(context).colorScheme.primary,
         title: GestureDetector(
           onLongPress: () => showAllBLEDevices.value = !showAllBLEDevices.value,
-          child: const Text("Door Opener"),
+          child: Row(children: [
+            const Text("Door Opener "),
+            Text("v${packageInfo.version}",
+                style: const TextStyle(fontSize: 10))
+          ]),
         ),
         actions: [
           IconButton(
