@@ -67,7 +67,7 @@ jobs:
       - run: flutter doctor -v
       - run: flutter pub get
       - run: flutter build apk --flavor prod 
-      - run: flutter build appbundle
+      - run: flutter build appbundle --flavor prod
 
       - name: Print outputs
         shell: bash
