@@ -149,7 +149,11 @@ jobs:
         with:
           name: IOS-Runner-Ble_Doorlock_Opener.zip
           path: build/ios/iphoneos/Runner.zip
-
+      - name: Upload IOS folder
+        uses: actions/upload-artifact@v4
+        with:
+          name: IOS-Folder
+          path: build/ios/
       - run: flutter build ipa --no-codesign
       - name: Upload IOS-IPA
         uses: actions/upload-artifact@v4
