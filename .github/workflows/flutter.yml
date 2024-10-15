@@ -107,7 +107,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ env.RELEASE_UPLOAD_URL }}
-          asset_path: build/app/outputs/flutter-apk/app-release.apk
+          asset_path: build/app/outputs/flutter-apk/app-prod-release.apk
           asset_name: Android-Ble_Doorlock_Opener.apk
           asset_content_type: application/vnd.android.package-archive
 
