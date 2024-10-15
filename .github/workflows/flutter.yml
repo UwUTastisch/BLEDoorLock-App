@@ -128,7 +128,7 @@ jobs:
           #flutter-version-file: pubspec.yaml # path to pubspec.yaml
 
       - run: flutter pub get
-      - run: flutter build ios --release --no-codesign
+      - run: flutter build ios --flavor prod --no-codesign
 
       - name: Print outputs
         shell: bash
@@ -150,7 +150,7 @@ jobs:
           name: IOS-Runner-Ble_Doorlock_Opener.zip
           path: build/ios/iphoneos/Runner.zip
 
-      - run: flutter build ipa
+      - run: flutter build ipa --flavor prod --no-codesign
       - name: Upload IOS-IPA
         uses: actions/upload-artifact@v4
         with:
