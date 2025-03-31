@@ -41,7 +41,7 @@ class BleDoorStorage {
     List<String> bleDoors = prefs.getStringList(_bleDoorKey) ?? [];
     final index = bleDoors.indexWhere((door) {
       final doorMap = jsonDecode(door) as Map<String, dynamic>;
-      return doorMap['lockId'] == bleDoor.lockId.toString();
+      return doorMap['peripheralMacAddress'] == bleDoor.peripheralMacAddress.toString();
     });
     bleDoors[index] = bleDoorJson;
     await prefs.setStringList(_bleDoorKey, bleDoors);

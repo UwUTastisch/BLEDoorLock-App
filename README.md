@@ -1,16 +1,62 @@
 # ble_doorlock_opener
 
-This app is for opening
+This app is for opening a door that uses an Arduino mini ESP32 and a relay. \
+Through BLE characteristics the credentials are send and the door opens after the Arduino checked the vadility. \
+In the near future the values of the characteristics will be encrypted with AES and the AES key is given out before every
+whole action with RSA.
 
-## Getting Started
+Actions: 
+ - open the door
+ - add another user
 
-This project is a starting point for a Flutter application.
+The Arduino mini ESP32 project can be found here https://github.com/Bastindo/BLEDoorLock/
 
-A few resources to get you started if this is your first Flutter project:
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
+## Install flutter 
+git clone https://github.com/flutter/flutter.git -b stable \
+sudo mv flutter /usr/lib/ \
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+## Compile for Android (from Arch host)
+JVM runtime version of 17 is needed
+Guide for jks key and key.properties tbd
+1. Install flutter & https://aur.archlinux.org/packages/android-sdk \
+2. Run sdkmanager --install "build-tools;34.0.0" \
+3. Go to the root directory of this project. \
+4. Run "flutter build apk" \
+5. APK can be found in ./build/android/?/release/bundle \
+## Compile for iOS 
+tbd
+
+## Encryption
+ - RSA1024 PKCS#1v2.1 OAEP SHA-256
+ - AES-GCM128
+AES-GCM verwendet 3 Komponenten: Schlüssel, IV und Tag \\
+
+Schlüssel (16 Bytes) bekommt man durch den Austausch mit RSA.\ 
+IV (12 Bytes) legen wir vorher statisch fest und muss für alle gleich sein (wird dann eine zufällige Bytefolge sein) \
+Tag (16 Bytes) werden beim verschlüsseln zusätzlich zur encrypted Message rausgegeben und die hängt man einfach hinten ran. \
+
+Also jede BLE Characteristic wird 32 Byte Platz haben. Die ersten 16 Byte sollen das verschlüsselte Wort sein und nach dem 16. Byte beginnt der Tag mit weiteren 16 Bytes \\
+
+entire characteristic: 32 Byte \
+encrypted part: 16 Byte \
+Tag: 16 Byte \
+
+
+## Using Flutter on Arch Linux
+Do yourself a favor and install paru. \
+Then run "paru flutter" to get all the necessary dependencies and flutter itself. \
+Android Studio is also needed:\
+"paru android-studio" \\
+Build for linux (checking dependencies etc) \
+"flutter build linux" \\
+Build for Android \
+Need to set ANDROID_HOME \
+"flutter build apk" \
+
+# Using VSCode
+Install the flutter extension
+
+## Others
+Take a look at https://docs.flutter.dev/get-started/install/
+

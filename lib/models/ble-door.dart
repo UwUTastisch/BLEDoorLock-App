@@ -2,33 +2,32 @@
 
 import 'dart:ffi';
 
-import 'package:bluetooth_low_energy/bluetooth_low_energy.dart';
 import 'package:flutter/material.dart';
 
 class BleDoor {
-  final UUID lockId;
+  String peripheralMacAddress;
   String lockName;
   String userName;
   final String password;
   bool isAdmin;
   Color? color;
 
-  BleDoor({required this.lockId, required this.lockName, required this.userName , required this.password, this.isAdmin = false, this.color});
+  BleDoor({required this.peripheralMacAddress, required this.lockName, required this.userName , required this.password, this.isAdmin = false, this.color});
 
   Map<String, dynamic> toJson() {
     return {
-      'lockId': lockId.toString(),
+      'peripheralMacAddress': peripheralMacAddress.toString(),
       'password': password,
       'userName': userName,
       'lockName': lockName,
       'isAdmin': isAdmin,
-      'color' : color?.value
+      'color' : color?.g
     };
   }
 
   static BleDoor fromJson(Map<String, dynamic> json) {
     return BleDoor(
-      lockId: UUID.fromString(json['lockId']),
+      peripheralMacAddress: json['peripheralMacAddress'],
       lockName: json['lockName'],
       userName: json['userName'],
       password: json['password'],
