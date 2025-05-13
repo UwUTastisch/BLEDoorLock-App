@@ -21,7 +21,7 @@ class BleDoor {
       'userName': userName,
       'lockName': lockName,
       'isAdmin': isAdmin,
-      'color' : color?.g
+      'color' : color
     };
   }
 
