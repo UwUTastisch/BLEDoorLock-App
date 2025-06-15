@@ -13,7 +13,7 @@ String generateRandomString(int length) {
 }
 
 bool isValidUsername(String username) {
-  return username.length >= 3;
+  return username.isNotEmpty && username.length >= 3;
 }
 
 double rightAngle() {

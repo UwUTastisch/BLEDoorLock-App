@@ -1,6 +1,3 @@
-//Model that knows Lock-Id, Password and Name of the user
-
-import 'dart:ffi';
 
 import 'package:flutter/material.dart';
 

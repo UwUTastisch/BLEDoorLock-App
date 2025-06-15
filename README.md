@@ -22,7 +22,7 @@ Guide for jks key and key.properties tbd
 1. Install flutter & https://aur.archlinux.org/packages/android-sdk \
 2. Run sdkmanager --install "build-tools;34.0.0" \
 3. Go to the root directory of this project. \
-4. Run "flutter build apk" \
+4. Run ```flutter build apk``` as production and ```flutter build apk --flavor dev``` for testing, so you don't override your stable builds if installed \
 5. APK can be found in ./build/android/?/release/bundle \
 ## Compile for iOS 
 tbd
@@ -46,6 +46,7 @@ Tag: 16 Byte \
 ## Using Flutter on Arch Linux
 Do yourself a favor and install paru. \
 Then run "paru flutter" to get all the necessary dependencies and flutter itself. \
+If that runs you into problems install the [manually](https://docs.flutter.dev/install/manual), since some of us run into problems using aur packages.  
 Android Studio is also needed:\
 "paru android-studio" \\
 Build for linux (checking dependencies etc) \
@@ -53,6 +54,7 @@ Build for linux (checking dependencies etc) \
 Build for Android \
 Need to set ANDROID_HOME \
 "flutter build apk" \
+"flutter build apk --flavor dev" \ is recomended
 
 # Using VSCode
 Install the flutter extension

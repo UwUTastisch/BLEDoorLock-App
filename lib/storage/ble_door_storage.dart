@@ -2,7 +2,7 @@
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../models/ble-door.dart';
+import '../features/ble_door/models/ble_door.dart';
 
 class BleDoorStorage {
   static const String _bleDoorKey = 'bleDoors';
