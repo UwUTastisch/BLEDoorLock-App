@@ -150,7 +150,7 @@ class BleDoorController {
     }
 
     // wrap the BLE call in a tracked Future
-    final f = _bleService.connectAndOpen(scan.device, door)
+    final f = _bleService.open(scan.device, door)
         .timeout(const Duration(seconds: 10), onTimeout: () {
       throw Exception('Timeout while connecting to ${door.lockName}');
     })
@@ -166,6 +166,22 @@ class BleDoorController {
 
     statesController[id] = f;
     await f;
+  }
+
+  //push RSA PKCS#1 v2.1 (OAEP) SHA-256 on key uuidCryptoService -> uuidKeyCharacteristic
+
+  Future<void> connectAndPushKey(BuildContext ctx, BleDoor door) async {
+    final scan = devices.value[door.peripheralMacAddress];
+    if (scan == null) {
+      Dialogs.showErrorDialog(ctx, 'Device not in range');
+      return;
+    }
+    try {
+      await _bleService.getCryptoConnection(scan.device, door);
+      Dialogs.showSuccessDialog(ctx, 'Key pushed successfully');
+    } catch (e) {
+      Dialogs.showErrorDialog(ctx, e);
+    }
   }
 
   Future<void> connectAndAddUser(BuildContext ctx,
