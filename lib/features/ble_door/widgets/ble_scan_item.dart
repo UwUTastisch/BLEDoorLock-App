@@ -12,8 +12,8 @@ class BleScanItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final id = result.device.id.id;
-    final name = result.device.name.isNotEmpty ? result.device.name : id;
+    final id = result.device.remoteId.toString();
+    final name = result.device.platformName;
     return Column(
       children: [
         Text('Name -> $name\nUUID -> $id\nRSSI -> ${result.rssi}'),

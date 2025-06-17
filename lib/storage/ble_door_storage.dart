@@ -1,5 +1,7 @@
 
 import 'dart:convert';
+import 'dart:ui';
+import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../features/ble_door/models/ble_door.dart';
@@ -35,6 +37,7 @@ class BleDoorStorage {
   }
 
   static Future<void> updateBleDoor(BleDoor bleDoor) async {
+    bleDoor.color ??= Colors.blue; // Ensure color is not null
     final prefs = await SharedPreferences.getInstance();
     final bleDoorMap = bleDoor.toJson();
     final bleDoorJson = jsonEncode(bleDoorMap);

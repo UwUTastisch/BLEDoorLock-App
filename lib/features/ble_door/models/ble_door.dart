@@ -18,7 +18,7 @@ class BleDoor {
       'userName': userName,
       'lockName': lockName,
       'isAdmin': isAdmin,
-      'color' : color
+      'color' : color?.toARGB32(),
     };
   }
 

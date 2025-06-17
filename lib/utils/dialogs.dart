@@ -170,7 +170,7 @@ class Dialogs {
       BuildContext context, BleDoorController controller, BleDoor door) {
     final nameCtrl = TextEditingController(text: door.lockName);
     final isValidName = ValueNotifier(isValidUsername(nameCtrl.text));
-    final colorNot = ValueNotifier<Color?>(door.color);
+    final color = ValueNotifier<Color?>(door.color);
 
     nameCtrl
         .addListener(() => isValidName.value = isValidUsername(nameCtrl.text));
@@ -184,7 +184,7 @@ class Dialogs {
             children: [
               const SizedBox(height: 16),
               const Text('Choose Color'),
-              ColorPicker(color: colorNot),
+              ColorPicker(color: color),
               const SizedBox(height: 16),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -195,18 +195,28 @@ class Dialogs {
               ),
               const SizedBox(height: 16),
               const Text('Preview'),
-              BleDoorCard(
-                door: BleDoor(
-                  peripheralMacAddress: door.peripheralMacAddress,
-                  lockName: nameCtrl.text,
-                  userName: door.userName,
-                  password: door.password,
-                  isAdmin: door.isAdmin,
-                  color: colorNot.value,
-                ),
-                onOpen: () {},
-                onShowAdminMenu: () {},
-              ),
+              ValueListenableBuilder(
+                  valueListenable: color,
+                  builder: (context, bleName, child) => ValueListenableBuilder(
+                      valueListenable: color,
+                      builder: (context, color, child) {
+                        return BleDoorCard(
+                          door: BleDoor(
+                            peripheralMacAddress: door.peripheralMacAddress,
+                            lockName: nameCtrl.text,
+                            userName: door.userName,
+                            password: door.password,
+                            isAdmin: door.isAdmin,
+                            color: color,
+                          ),
+                          isPreview: true,
+                          isNearBy: true,
+                          isConnecting: false,
+                          onOpen: () {},
+                          onShowAdminMenu: () {},
+                        );
+                      })),
+              const SizedBox(height: 16),
             ],
           ),
         ),
@@ -224,7 +234,7 @@ class Dialogs {
                           userName: door.userName,
                           password: door.password,
                           isAdmin: door.isAdmin,
-                          color: colorNot.value,
+                          color: color.value,
                         );
                         Navigator.of(ctx).pop();
                         await controller.updateBleDoor(updated);
