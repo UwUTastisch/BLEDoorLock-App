@@ -8,12 +8,18 @@ import '../models/ble_door.dart';
 class BleScanItem extends StatelessWidget {
   final ScanResult result;
 
-  const BleScanItem({Key? key, required this.result}) : super(key: key);
+  const BleScanItem({super.key, required this.result});
 
   @override
   Widget build(BuildContext context) {
     final id = result.device.remoteId.toString();
-    final name = result.device.platformName;
+    var name = result.device.platformName;
+    if (name.isEmpty) name = result.advertisementData.localName;
+    if (name.isEmpty) name = result.device.advName;
+    if (name.isEmpty) name = result.device.name;
+    if (name.isEmpty) {
+      return const SizedBox.shrink();
+    }
     return Column(
       children: [
         Text('Name -> $name\nUUID -> $id\nRSSI -> ${result.rssi}'),

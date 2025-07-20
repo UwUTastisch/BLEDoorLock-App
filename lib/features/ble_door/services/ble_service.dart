@@ -73,45 +73,33 @@ class BleService {
 
     final crypto = _getCrypto(door);
 
-    final rsaKey = crypto.rsaKeyPair.publicKey.toString();
+    // filter pem header and footer of the RSA key
+    String unfilteredRsaKey = crypto.publicKey;
+    String rsaKey = unfilteredRsaKey
+        .replaceAll('-----BEGIN RSA PUBLIC KEY-----', '')
+        .replaceAll('-----END RSA PUBLIC KEY-----', '');
 
-    //subscribe to the key characteristic
-    await keyChar.setNotifyValue(true);
 
-    // add listeners to the key characteristic
-    keyChar.lastValueStream.listen((value) {
-      if (value.isNotEmpty) {
-        final encryptedAesKey = Uint8List.fromList(value);
-        if (encryptedAesKey.isEmpty) return;
-        if (encryptedAesKey == Uint8List.fromList(utf8.encode(rsaKey))) return;
-        try {
-          if (crypto.setEncryptedAesKey(encryptedAesKey)) {
-            if (kDebugMode) {
-              print('AES key set successfully');
-            }
-          } else {
-            if (kDebugMode) {
-              print('AES key already set, reset key');
-            }
-            keyChar?.setNotifyValue(false);
-            getCryptoConnection(device, door);
-            return;
-          }
-        } catch (e) {
-          if (kDebugMode) {
-            print('Error setting AES key: $e');
-          }
-          keyChar?.setNotifyValue(false);
-          throw Exception('Failed to set AES key: $e');
-        }
-      }
-    });
+    final data = Uint8List.fromList(utf8.encode(rsaKey));
 
-    await keyChar.write(Uint8List.fromList(utf8.encode(rsaKey)));
+    await keyChar.write(data);
     // wait for the key characteristic to be updated
-    await Future.delayed(const Duration(seconds: 2));
+
+    // read the key characteristic to ensure it is set
+    Uint8List aesKey = Uint8List.fromList(await keyChar.read());
+    if (kDebugMode) {
+      print('Received AES key: ${aesKey.map((e) => e.toRadixString(16)).join(' ')}');
+    }
+    if (aesKey.isEmpty) {
+      throw Exception('Failed to receive AES key from device');
+    }
+    if (data == aesKey) {
+      throw Exception('Received AES key matches RSA key, something went wrong');
+    }     // set the AES key in the crypto client
+    crypto.setEncryptedAesKey(Uint8List.fromList(aesKey));
     if (crypto.aesKeyStatus != AesKeyStatus.set) {
-      keyChar.setNotifyValue(false);
+      //keyChar.setNotifyValue(false);
+
       throw Exception('Failed to set up crypto connection');
     }
   }

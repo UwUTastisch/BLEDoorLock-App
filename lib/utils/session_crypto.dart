@@ -1,4 +1,5 @@
 import 'dart:typed_data';
+import 'package:basic_utils/basic_utils.dart';
 import 'package:pointycastle/api.dart';
 import 'package:pointycastle/asymmetric/api.dart';
 import 'package:pointycastle/asymmetric/oaep.dart';
@@ -35,16 +36,6 @@ class HybridEncryptionClient {
     return HybridEncryptionClient(rsaKeyPair: _generateRSAKeyPair());
   }
 
-  // Public key im PEM-Format
-  String get publicKeyPem {
-    final modulus = rsaKeyPair.publicKey.modulus!;
-    final exponent = rsaKeyPair.publicKey.exponent!;
-    return '-----BEGIN PUBLIC KEY-----\n'
-        '${_encodeBigInt(modulus)}\n'
-        '${_encodeBigInt(exponent)}\n'
-        '-----END PUBLIC KEY-----';
-  }
-
   AesKeyStatus get aesKeyStatus => _aesKeyStatus;
 
   // Entschlüsselt den AES-Schlüssel
@@ -58,10 +49,29 @@ class HybridEncryptionClient {
     if (_aesKeyStatus == AesKeyStatus.expired) {;
       throw StateError('AES key is expired, please refresh it');
     }
-    final oaep = AsymmetricBlockCipher('RSA/ECB/OAEPPadding') as OAEPEncoding;
+    //final oaep = AsymmetricBlockCipher('RSA/ECB/OAEPPadding') as OAEPEncoding;
 
-    oaep.init(false, PrivateKeyParameter(rsaKeyPair.privateKey));
+
+
+    final oaep = AsymmetricBlockCipher("RSA/OAEP");
+    /*
+    cipher..reset()..init(false, privateKeyParameter);
+final decData = cipher.process(encData);
+     */
+    oaep..reset()
+        ..init(false, PrivateKeyParameter<RSAPrivateKey>(rsaKeyPair.privateKey));
     _aesKey = oaep.process(encryptedAesKey);
+
+
+    //oaep.init(false, PrivateKeyParameter(rsaKeyPair.privateKey));
+    //_aesKey = //oaep.process(encryptedAesKey);
+    //var rsaEngine = RSAEngine()
+    //  ..init(false, PrivateKeyParameter<RSAPrivateKey>(rsaKeyPair.privateKey));
+
+    //_aesKey = rsaEngine.process(encryptedAesKey);
+    if (_aesKey == null || _aesKey!.isEmpty) {
+      throw StateError('Decryption of AES key failed');
+    }
     return true;
   }
 
@@ -117,14 +127,31 @@ class HybridEncryptionClient {
   }
 
   static AsymmetricKeyPair<RSAPublicKey, RSAPrivateKey> _generateRSAKeyPair() {
-    final keyParams = RSAKeyGeneratorParameters(BigInt.parse('65537'), 2048, 64);
+    final keyParams = RSAKeyGeneratorParameters(BigInt.parse('65537'), 256, 64);
     final random = FortunaRandom()..seed(KeyParameter(Uint8List(32)));
     final params = ParametersWithRandom(keyParams, random);
 
     final keyGen = RSAKeyGenerator();
     keyGen.init(params);
-
+    //log pem
+    print('Generating RSA key pair...');
+    print('Public Key: ${CryptoUtils.encodeRSAPublicKeyToPemPkcs1(keyGen.generateKeyPair().publicKey)}');
+    print('Private Key: ${CryptoUtils.encodeRSAPrivateKeyToPemPkcs1(keyGen.generateKeyPair().privateKey)}');
     return keyGen.generateKeyPair();
   }
+
+  String get publicKey {
+    return CryptoUtils.encodeRSAPublicKeyToPemPkcs1(
+      rsaKeyPair.publicKey,
+    );
+  }
+
+  String get privateKey  {
+    return CryptoUtils.encodeRSAPrivateKeyToPemPkcs1(
+      rsaKeyPair.privateKey,
+    );
+  }
+
+
 
 }

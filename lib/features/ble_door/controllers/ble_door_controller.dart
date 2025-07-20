@@ -149,6 +149,15 @@ class BleDoorController {
       return;
     }
 
+    if (kDebugMode) {
+      print('Connecting to door: ${door.lockName} with id: $id');
+    }
+
+    final crypto = _bleService.getCryptoConnection(scan.device, door)
+        .timeout(const Duration(seconds: 10), onTimeout: () {
+      throw Exception('Timeout while connecting to ${door.lockName}');
+    });
+
     // wrap the BLE call in a tracked Future
     final f = _bleService.open(scan.device, door)
         .timeout(const Duration(seconds: 10), onTimeout: () {
